@@ -11,11 +11,15 @@ include_directories(
 
 # source files *****************************************************************
 set(source_files
+    ./src/fall_challenge_2022/Cell.cpp
+    ./src/fall_challenge_2022/Map.cpp
+    ./src/fall_challenge_2022/State.cpp
 )
 
 # test files *******************************************************************
 set(test_files
     ./test/fall_challenge_2022/test_sample.cpp
+    ./test/fall_challenge_2022/test_map.cpp
 )
 
 # exe fall_challenge_2022 ******************************************************

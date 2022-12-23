@@ -1,5 +1,6 @@
 import logging
 import pathlib
+import pyperclip
 import rich.logging
 import rich.traceback
 import rich_click as click
@@ -48,8 +49,8 @@ def cpp_merge(project):
             for line in header_file:
                 line = line.strip()
 
-                for class_name in class_name_to_header_file_path.keys():
-                    if "{} ".format(class_name) in line:
+                for class_name, hfp in class_name_to_header_file_path.items():
+                    if class_name in line and hfp != header_file_path:
                         predecessors.add(class_name_to_header_file_path[class_name])
 
         header_file_path_to_predecessors[header_file_path] = predecessors
@@ -77,11 +78,33 @@ def cpp_merge(project):
 
         header_file_paths_processed.add(header_file_path)
         header_file_paths_ordered.append(header_file_path)
-            
 
-    logging.info(header_file_paths_ordered)
-    logging.info("found {} headers".format(len(header_file_paths)))
+    # find source files ***********************************
+    source_file_paths = []
 
+    for source_file_path in src_directory_path.rglob("*.cpp"):
+        source_file_paths.append(source_file_path)
+
+    # generate output text *********************************
+    output_lines = []
+
+    exclude_patterns = [
+        '#include <{}'.format(project)
+    ]
+    
+    file_paths_to_copy = header_file_paths_ordered + source_file_paths
+    for file_path in file_paths_to_copy:
+        with file_path.open('r') as file:
+            for line in file:
+                if all([p not in line for p in exclude_patterns]):
+                    output_lines.append(line)
+
+    output = ''.join(output_lines)
+
+    # copy output in clipboard *****************************
+    pyperclip.copy(output)
+
+    logging.info('merge copied')
 
 if __name__ == "__main__":
     rich.traceback.install()
