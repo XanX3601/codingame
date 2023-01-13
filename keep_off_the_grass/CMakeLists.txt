@@ -11,21 +11,15 @@ include_directories(
 
 # source files *****************************************************************
 set(source_files
-    ./src/fall_challenge_2022/Cell.cpp
-    ./src/fall_challenge_2022/Map.cpp
-    ./src/fall_challenge_2022/State.cpp
 )
 
 # test files *******************************************************************
 set(test_files
-    ./test/fall_challenge_2022/test_sample.cpp
-    ./test/fall_challenge_2022/test_map.cpp
 )
 
 # exe fall_challenge_2022 ******************************************************
-add_executable(fall_challenge_2022 ./src/fall_challenge_2022/main.cpp ${source_files})
+add_executable(keep_off_the_grass ./src/keep_off_the_grass/main.cpp ${source_files})
 
 # exe test_fall_challenge_2022 *************************************************
-add_executable(test_fall_challenge_2022 ${test_files} ${source_files})
-target_link_libraries(test_fall_challenge_2022 PRIVATE Catch2::Catch2WithMain)
-
+add_executable(test_keep_off_the_grass ${test_files} ${source_files})
+target_link_libraries(test_keep_off_the_grass PRIVATE Catch2::Catch2WithMain)
