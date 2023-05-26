@@ -4,6 +4,7 @@ import pyperclip
 import rich.logging
 import rich.traceback
 import rich_click as click
+import string
 
 
 @click.group()
@@ -37,6 +38,20 @@ def cpp_merge(project):
                     line = line.split()
                     class_name = line[1]
 
+                    class_name = ''.join(
+                        c for c in class_name if c not in string.punctuation
+                    )
+
+                    class_name_to_header_file_path[class_name] = header_file_path
+
+                elif line.startswith("enum class"):
+                    line = line.split()
+                    class_name = line[2]
+
+                    class_name = ''.join(
+                        c for c in class_name if c not in string.punctuation
+                    )
+
                     class_name_to_header_file_path[class_name] = header_file_path
 
     # for each header, find their order ********************
@@ -53,7 +68,7 @@ def cpp_merge(project):
                     if class_name in line and hfp != header_file_path:
                         predecessors.add(class_name_to_header_file_path[class_name])
 
-        header_file_path_to_predecessors[header_file_path] = predecessors
+                header_file_path_to_predecessors[header_file_path] = predecessors
 
     # order headers ****************************************
     header_file_paths_ordered = []
