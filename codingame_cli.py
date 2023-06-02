@@ -121,6 +121,22 @@ def cpp_merge(project):
 
     logging.info('merge copied')
 
+@cli.command()
+@click.argument("file")
+def python_copy(file):
+    logging.info(f"python copy {file}")
+
+    file_path = pathlib.Path(file)
+
+    with file_path.open("r") as file:
+        lines = [line for line in file]
+
+    output = ''.join(lines)
+
+    pyperclip.copy(output)
+    logging.info("file copied")
+
+
 if __name__ == "__main__":
     rich.traceback.install()
 
