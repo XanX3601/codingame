@@ -4,3 +4,6 @@
 [submodule "olymbits/bronze/libs/Catch2"]
 	path = olymbits/bronze/libs/Catch2
 	url = https://github.com/catchorg/Catch2.git
+[submodule "olymbits/libs/Catch2"]
+	path = olymbits/libs/Catch2
+	url = https://github.com/catchorg/Catch2.git
