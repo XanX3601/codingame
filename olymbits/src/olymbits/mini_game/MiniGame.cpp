@@ -37,5 +37,14 @@ namespace olymbits::mini_game
 
         __is_game_over = __gpu == "GAME_OVER";
     }
+
+    void MiniGame::update(
+        const std::vector<int>& cr_registers,
+        const std::string& cr_gpu
+    )
+    {
+        __registers = cr_registers;
+        __gpu = cr_gpu;
+    }
 }
 

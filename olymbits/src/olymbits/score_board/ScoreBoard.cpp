@@ -5,13 +5,11 @@
 namespace olymbits::score_board
 {
     // constructor *************************************************************
-    ScoreBoard::ScoreBoard(int game_count):
+    ScoreBoard::ScoreBoard():
         // final score
-        __final_scores(3, 0),
-        // game count
-        __game_count(game_count),
+        __final_scores(3, 0), // player_count
         // medals
-        __medals(game_count * 3, 0)
+        __medals(3 * 4 * 3, 0) // player_count * game_count * medal_count
     {
     }
 
@@ -22,7 +20,7 @@ namespace olymbits::score_board
     ) const
     {
         int player_gold_medal_index(
-            player_index * __game_count * 3 + mini_game_index * 3
+            player_index * 4 * 3 + mini_game_index * 3
         );
         
         return (
@@ -38,9 +36,9 @@ namespace olymbits::score_board
         {
             std::cin >> __final_scores[player_index];
 
-            for (int game_index(0); game_index < __game_count; ++game_index)
+            for (int game_index(0); game_index < 4; ++game_index)
             {
-                int player_gold_medal_index = player_index * __game_count * 3 + game_index * 3;
+                int player_gold_medal_index = player_index * 4 * 3 + game_index * 3;
                 std::cin
                     >> __medals[player_gold_medal_index]
                     >> __medals[player_gold_medal_index + 1]

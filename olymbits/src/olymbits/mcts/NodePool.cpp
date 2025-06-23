@@ -17,22 +17,24 @@ namespace olymbits::mcts
     }
 
     // node ********************************************************************
-    std::unique_ptr<Node> NodePool::get_node()
+    std::shared_ptr<Node> NodePool::get_node()
     {
         NodePool& r_node_pool(get_node_pool_instance());
 
-        if (!__node_stack.empty())
+        if (!r_node_pool.__node_stack.empty())
         {
-            std::unique_ptr<Node> up_node(std::move(__node_stack.top()));
-            __node_stack.pop();
-            return up_node;
+            std::shared_ptr<Node> sp_node(
+                std::move(r_node_pool.__node_stack.top())
+            );
+            r_node_pool.__node_stack.pop();
+            return sp_node;
         }
 
         return std::make_unique<Node>();
     }
 
-    void NodePool::give_node(std::unique_ptr<Node>&& rv_up_node)
+    void NodePool::give_node(std::shared_ptr<Node> sp_node)
     {
-        get_node_pool_instance().__node_stack.push(std::move(rv_up_node));
+        get_node_pool_instance().__node_stack.push(std::move(sp_node));
     }
 }

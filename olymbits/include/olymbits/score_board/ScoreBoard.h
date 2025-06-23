@@ -9,15 +9,11 @@ namespace olymbits::score_board
     {
     // constructor *************************************************************
     public:
-        ScoreBoard(int game_count);
+        ScoreBoard();
 
     // final score *************************************************************
     private:
         std::vector<int> __final_scores;
-
-    // game count **************************************************************
-    private:
-        int __game_count;
 
     // medals ******************************************************************
     public:

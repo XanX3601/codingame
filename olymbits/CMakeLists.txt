@@ -20,11 +20,13 @@ set(source_files
     ./src/olymbits/bot/MCTSBot.cpp
     ./src/olymbits/bot/RandomBot.cpp
     ./src/olymbits/bot/RollerSpeedSkatingBot.cpp
+    ./src/olymbits/mcts/MCTS.cpp
+    ./src/olymbits/mcts/Node.cpp
+    ./src/olymbits/mcts/NodePool.cpp
     ./src/olymbits/mini_game/Archery.cpp
     ./src/olymbits/mini_game/Diving.cpp
     ./src/olymbits/mini_game/HurdleRace.cpp
     ./src/olymbits/mini_game/MiniGame.cpp
-    ./src/olymbits/mini_game/MiniGamePool.cpp
     ./src/olymbits/mini_game/RollerSpeedSkating.cpp
     ./src/olymbits/score_board/ScoreBoard.cpp
     ./src/olymbits/state/State.cpp
@@ -33,7 +35,7 @@ set(source_files
 
 # test files *******************************************************************
 set(test_files
-    ./test/truc.cpp
+    ./test/olymbits/mini_game/TestArchery.cpp
 )
 
 # exe fall_challenge_2022 ******************************************************

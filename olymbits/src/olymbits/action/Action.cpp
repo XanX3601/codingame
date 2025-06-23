@@ -3,10 +3,17 @@
 namespace olymbits::action
 {
     // actions *****************************************************************
-    Action const Action::UP(Action::up);
-    Action const Action::DOWN(Action::down);
-    Action const Action::LEFT(Action::left);
-    Action const Action::RIGHT(Action::right);
+    const Action Action::UP(Action::up);
+    const Action Action::DOWN(Action::down);
+    const Action Action::LEFT(Action::left);
+    const Action Action::RIGHT(Action::right);
+
+    const std::vector<std::reference_wrapper<const Action>> Action::actions{
+        Action::UP,
+        Action::DOWN,
+        Action::LEFT,
+        Action::RIGHT,
+    };
 
     // constructor *************************************************************
     Action::Action(Value value):
@@ -32,6 +39,12 @@ namespace olymbits::action
             default:
                 __first_letter = 'X';
         }
+    }
+
+    // operator ****************************************************************
+    bool Action::operator==(const Action& cr_action) const
+    {
+        return __value == cr_action.__value;
     }
 
     // string ******************************************************************

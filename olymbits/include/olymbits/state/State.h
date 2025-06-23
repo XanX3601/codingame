@@ -1,8 +1,6 @@
 #ifndef OLYMBITS_STATE_STATE_H
 #define OLYMBITS_STATE_STATE_H
 
-#include <memory>
-
 #include <olymbits/mini_game/Archery.h>
 #include <olymbits/mini_game/Diving.h>
 #include <olymbits/mini_game/MiniGame.h>
@@ -16,7 +14,7 @@ namespace olymbits::state
     {
     // constructor *************************************************************
     public:
-        State(int game_count);
+        State();
 
     // mini games **************************************************************
     public:
@@ -29,7 +27,10 @@ namespace olymbits::state
         const mini_game::RollerSpeedSkating& get_roller_speed_skating() const;
 
     private:
-        std::vector<std::unique_ptr<mini_game::MiniGame>> __mini_games;
+        mini_game::Archery __archery;
+        mini_game::Diving __diving;
+        mini_game::HurdleRace __hurdle_race;
+        mini_game::RollerSpeedSkating __roller_speed_skating;
 
     // score board *************************************************************
     public:
@@ -37,6 +38,14 @@ namespace olymbits::state
 
     private:
         score_board::ScoreBoard __score_board;
+
+    // simulation **************************************************************
+    public:
+        void apply_but_roller_speed_skating_to(
+            const action::Action& cr_action_player_0,
+            const action::Action& cr_action_player_1,
+            const action::Action& cr_action_player_2,
+            State& r_state) const;
 
     // update ******************************************************************
     public:

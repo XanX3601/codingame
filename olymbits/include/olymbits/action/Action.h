@@ -2,7 +2,9 @@
 #define OLYMBITS_ACTION_ACTION_H
 
 #include <iostream>
+#include <memory>
 #include <string>
+#include <vector>
 
 namespace olymbits::action
 {
@@ -29,9 +31,15 @@ namespace olymbits::action
         static const Action LEFT;
         static const Action RIGHT;
 
+        static const std::vector<std::reference_wrapper<const Action>> actions;
+
     // constructor *************************************************************
     public:
         Action(Value value);
+
+    // operator ****************************************************************
+    public:
+        bool operator==(const Action& cr_action) const;
 
     // string ******************************************************************
     public:

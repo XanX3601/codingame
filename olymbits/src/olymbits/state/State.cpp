@@ -1,57 +1,38 @@
 #include <olymbits/state/State.h>
 
-#include <olymbits/mini_game/MiniGamePool.h>
-
 namespace olymbits::state
 {
     // constructor *************************************************************
-    State::State(int game_count):
+    State::State():
         // mini games
-        __mini_games(),
+        __archery(),
+        __diving(),
+        __hurdle_race(),
+        __roller_speed_skating(),
         // score board
-        __score_board(game_count)
+        __score_board()
     {
-        __mini_games.emplace_back(std::move(mini_game::MiniGamePool::get_hurdle_race()));
-        __mini_games.emplace_back(std::move(mini_game::MiniGamePool::get_archery()));
-        __mini_games.emplace_back(std::move(mini_game::MiniGamePool::get_roller_speed_skating()));
-        __mini_games.emplace_back(std::move(mini_game::MiniGamePool::get_diving()));
     }
 
     // mini games **************************************************************
     const mini_game::Archery& State::get_archery() const
     {
-        const mini_game::Archery* cp_archery(
-            dynamic_cast<const mini_game::Archery*>(__mini_games[1].get())
-        );
-        
-        return *cp_archery;
+        return __archery;
     }
 
     const mini_game::Diving& State::get_diving() const
     {
-        const mini_game::Diving* cp_diving(
-            dynamic_cast<const mini_game::Diving*>(__mini_games[3].get())
-        );
-        
-        return *cp_diving;
+        return __diving;
     }
 
     const mini_game::HurdleRace& State::get_hurdle_race() const
     {
-        const mini_game::HurdleRace* cp_hurdle_race(
-            dynamic_cast<const mini_game::HurdleRace*>(__mini_games[0].get())
-        );
-        
-        return *cp_hurdle_race;
+        return __hurdle_race;
     }
 
     const mini_game::RollerSpeedSkating& State::get_roller_speed_skating() const
     {
-        const mini_game::RollerSpeedSkating* cp_roller_speed_skating(
-            dynamic_cast<const mini_game::RollerSpeedSkating*>(__mini_games[2].get())
-        );
-        
-        return *cp_roller_speed_skating;
+        return __roller_speed_skating;
     }
 
     // score board *************************************************************
@@ -60,14 +41,24 @@ namespace olymbits::state
         return __score_board;
     }
 
+    // simulation **************************************************************
+    void State::apply_but_roller_speed_skating_to(
+        const action::Action& cr_action_player_0,
+        const action::Action& cr_action_player_1,
+        const action::Action& cr_action_player_2,
+        State& r_state
+    ) const
+    {
+        
+    }
+
     // update ******************************************************************
     void State::update()
     {
         __score_board.update();
-
-        for (std::unique_ptr<mini_game::MiniGame>& r_up_mini_game: __mini_games)
-        {
-            r_up_mini_game->update();
-        }
+        __hurdle_race.update();
+        __archery.update();
+        __roller_speed_skating.update();
+        __diving.update();
     }
 }

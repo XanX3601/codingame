@@ -27,12 +27,12 @@ namespace olymbits::mcts
 
     // node ********************************************************************
     public:
-        std::unique_ptr<Node> get_node();
+        static std::shared_ptr<Node> get_node();
 
-        void give_node(std::unique_ptr<Node>&& up_node);
+        static void give_node(std::shared_ptr<Node> sp_node);
 
     private:
-        std::stack<std::unique_ptr<Node>> __node_stack;
+        std::stack<std::shared_ptr<Node>> __node_stack;
     };
 }
 
