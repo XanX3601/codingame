@@ -1,50 +1,25 @@
 #include <olymbits/mini_game/MiniGame.h>
 
-#include <iostream>
-
-namespace olymbits::mini_game
+namespace olymbits::mini_game 
 {
     // constructor *************************************************************
     MiniGame::MiniGame():
-        // game over
-        __is_game_over(false),
-        // gpu
-        __gpu(),
         // registers
-        __registers(7, 0)
+        __gpu("GAME OVER"),
+        __registers{0, 0, 0, 0, 0, 0, 0}
     {
     }
 
-    // game over ***************************************************************
-    bool MiniGame::is_game_over() const
+    // registers ***************************************************************
+    const std::string& MiniGame::get_gpu() const
     {
-        return __is_game_over;
+        return __gpu;
     }
 
-    // update ******************************************************************
-    void MiniGame::update()
+    int MiniGame::get_register(std::size_t register_index) const
     {
-        std::cin
-            >> this->__gpu
-            >> this->__registers[0]
-            >> this->__registers[1]
-            >> this->__registers[2]
-            >> this->__registers[3]
-            >> this->__registers[4]
-            >> this->__registers[5]
-            >> this->__registers[6];
-        std::cin.ignore();
-
-        __is_game_over = __gpu == "GAME_OVER";
+        return __registers.at(register_index);
     }
 
-    void MiniGame::update(
-        const std::vector<int>& cr_registers,
-        const std::string& cr_gpu
-    )
-    {
-        __registers = cr_registers;
-        __gpu = cr_gpu;
-    }
+    const std::size_t MiniGame::register_count(7);
 }
-

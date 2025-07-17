@@ -11,31 +11,13 @@ include_directories(
 
 # source files *****************************************************************
 set(source_files
-    ./src/olymbits/action/Action.cpp
-    ./src/olymbits/bot/ArcheryBot.cpp
-    ./src/olymbits/bot/Bot.cpp
-    ./src/olymbits/bot/DivingBot.cpp
-    ./src/olymbits/bot/HeuristicBot.cpp
-    ./src/olymbits/bot/HurdleRaceBot.cpp
-    ./src/olymbits/bot/MCTSBot.cpp
-    ./src/olymbits/bot/RandomBot.cpp
-    ./src/olymbits/bot/RollerSpeedSkatingBot.cpp
-    ./src/olymbits/mcts/MCTS.cpp
-    ./src/olymbits/mcts/Node.cpp
-    ./src/olymbits/mcts/NodePool.cpp
-    ./src/olymbits/mini_game/Archery.cpp
-    ./src/olymbits/mini_game/Diving.cpp
-    ./src/olymbits/mini_game/HurdleRace.cpp
     ./src/olymbits/mini_game/MiniGame.cpp
-    ./src/olymbits/mini_game/RollerSpeedSkating.cpp
-    ./src/olymbits/score_board/ScoreBoard.cpp
-    ./src/olymbits/state/State.cpp
-    ./src/olymbits/tools/distance.cpp
 )
 
 # test files *******************************************************************
 set(test_files
-    ./test/olymbits/mini_game/TestArchery.cpp
+    ./test/truc.cpp
+    ./test/olymbits/mini_game/TestMiniGame.cpp
 )
 
 # exe fall_challenge_2022 ******************************************************
