@@ -59,16 +59,18 @@ def cpp_merge(project):
 
     for header_file_path in header_file_paths:
         predecessors = set()
+        header_file_path_to_predecessors[header_file_path] = predecessors
 
         with header_file_path.open("r") as header_file:
             for line in header_file:
                 line = line.strip()
 
+                if not line.startswith("#include"):
+                    continue
+
                 for class_name, hfp in class_name_to_header_file_path.items():
                     if class_name in line and hfp != header_file_path:
                         predecessors.add(class_name_to_header_file_path[class_name])
-
-                header_file_path_to_predecessors[header_file_path] = predecessors
 
     # order headers ****************************************
     header_file_paths_ordered = []

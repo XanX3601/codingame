@@ -7,3 +7,6 @@
 [submodule "olymbits/libs/Catch2"]
 	path = olymbits/libs/Catch2
 	url = https://github.com/catchorg/Catch2.git
+[submodule "soak_overflow/libs/doctest"]
+	path = soak_overflow/libs/doctest
+	url = https://github.com/doctest/doctest.git
