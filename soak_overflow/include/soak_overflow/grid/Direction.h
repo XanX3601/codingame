@@ -29,6 +29,8 @@ namespace soak_overflow::grid
 
         static const Direction east;
 
+        static const Direction none;
+
         static const Direction north;
 
         static const Direction north_east;

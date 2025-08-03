@@ -68,7 +68,7 @@ TEST_CASE("soak_overflow::grid::Cell")
                 }
 
                 CHECK(orthogonal_neighbor_found);
-                CHECK(!non_orthogonal_neighbor_found);
+                CHECK_FALSE(non_orthogonal_neighbor_found);
             }
         }
     }

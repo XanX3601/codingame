@@ -10,12 +10,31 @@ namespace soak_overflow::agent
     {
     // agent *******************************************************************
     public:
+        void crouch_agent(int agent_id);
+
         const Agent& get_agent(int agent_id) const;
+
+        int get_agent_id_on(const grid::Coord& cr_coord) const;
+
+        const Agent& get_agent_on(const grid::Coord& cr_coord) const;
+
+        const std::unordered_set<int>& get_agent_ids() const;
+
+        bool is_there_an_agent_here(const grid::Coord& cr_coord) const;
+
+        void move_agent(int agent_id, const grid::Coord& cr_coord);
+
+        void raise_agent(int agent_id);
 
     private:
         std::unordered_map<int, Agent> __agent_id_to_agent;
+
+        std::unordered_map<int, int> __coord_id_to_agent_id;
     
     // agent data **************************************************************
+    public:
+        const AgentDataCollection* get_agent_data_collection() const;
+
     private:
         const AgentDataCollection* __cp_agent_data_collection;
 
@@ -25,7 +44,7 @@ namespace soak_overflow::agent
             const AgentDataCollection* cp_agent_data_collection
         );
 
-        AgentCollection(const AgentCollection& cr_agent_collection) = delete;
+        AgentCollection(const AgentCollection& cr_agent_collection);
 
         AgentCollection(AgentCollection&& rv_agent_collection) noexcept = default;
 

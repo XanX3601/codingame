@@ -27,8 +27,7 @@ TEST_CASE("soak_overflow::agent::AgentData")
     SUBCASE("Given an agent data from stdin")
     {
         std::string input("1 2 3 4 5 6");
-        std::istringstream input_stream(input);
-        std::cin.rdbuf(input_stream.rdbuf());
+        std::cin.rdbuf(std::istringstream(input).rdbuf());
 
         soak_overflow::agent::AgentData agent_data(
             soak_overflow::agent::AgentData::from_stdin()

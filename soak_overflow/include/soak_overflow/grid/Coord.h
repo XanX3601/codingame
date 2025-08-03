@@ -23,6 +23,10 @@ namespace soak_overflow::grid
     public:
         Coord apply_direction(const Direction& cr_direction) const;
 
+    // id **********************************************************************
+    public:
+        int get_id() const;
+
     // operator ****************************************************************
     public:
         Coord& operator=(const Coord& cr_coord) = default;
@@ -30,6 +34,13 @@ namespace soak_overflow::grid
         Coord& operator=(Coord&& rv_coord) noexcept = default;
 
         bool operator==(const Coord& cr_coord) const;
+
+        bool operator!=(const Coord& cr_coord) const;
+
+        friend std::ostream& operator<<(
+            std::ostream& r_stream,
+            const Coord& cr_coord
+        );
 
     // value *******************************************************************
     public:

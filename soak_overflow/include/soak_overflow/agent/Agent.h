@@ -14,7 +14,7 @@ namespace soak_overflow::agent
             const AgentData* cp_data
         );
     
-        Agent(const Agent& cr_agent) = delete;
+        Agent(const Agent& cr_agent);
 
         Agent(Agent&& rv_agent) noexcept = default;
 
@@ -24,10 +24,26 @@ namespace soak_overflow::agent
     public:
         const grid::Coord& get_coord() const;
 
+        void set_coord(const grid::Coord& cr_coord);
+
     private:
         grid::Coord __coord;
 
+    // crouch ******************************************************************
+    public:
+        void crouch();
+
+        bool is_crouched() const;
+
+        void stand_up();
+
+    private:
+        bool __crouched;
+
     // data ********************************************************************
+    public:
+        const AgentData* get_agent_data() const;
+
     private:
         const AgentData* __cp_data;
 

@@ -12,6 +12,12 @@ TEST_CASE("soak_overflow::grid::Direction")
             CHECK(soak_overflow::grid::Direction::east.delta_y == 0);
             CHECK(soak_overflow::grid::Direction::east.is_orthogonal());
         }
+        SUBCASE("Then non delta_x is 0 and delta_y is 0 and is not orthogonal")
+        {
+            CHECK(soak_overflow::grid::Direction::none.delta_x == 0);
+            CHECK(soak_overflow::grid::Direction::none.delta_y == 0);
+            CHECK_FALSE(soak_overflow::grid::Direction::none.is_orthogonal());
+        }
         SUBCASE("Then north delta_x is 0 and delta_y is -1 and is orthogonal")
         {
             CHECK(soak_overflow::grid::Direction::north.delta_x == 0);
@@ -22,13 +28,13 @@ TEST_CASE("soak_overflow::grid::Direction")
         {
             CHECK(soak_overflow::grid::Direction::north_east.delta_x == 1);
             CHECK(soak_overflow::grid::Direction::north_east.delta_y == -1);
-            CHECK(!soak_overflow::grid::Direction::north_east.is_orthogonal());
+            CHECK_FALSE(soak_overflow::grid::Direction::north_east.is_orthogonal());
         }
         SUBCASE("Then north west delta_x is -1 and delta_y is -1 and is not orthogonal")
         {
             CHECK(soak_overflow::grid::Direction::north_west.delta_x == -1);
             CHECK(soak_overflow::grid::Direction::north_west.delta_y == -1);
-            CHECK(!soak_overflow::grid::Direction::north_west.is_orthogonal());
+            CHECK_FALSE(soak_overflow::grid::Direction::north_west.is_orthogonal());
         }
         SUBCASE("Then south delta_x is 0 and delta_y is 1 and is orthogonal")
         {
@@ -40,13 +46,13 @@ TEST_CASE("soak_overflow::grid::Direction")
         {
             CHECK(soak_overflow::grid::Direction::south_east.delta_x == 1);
             CHECK(soak_overflow::grid::Direction::south_east.delta_y == 1);
-            CHECK(!soak_overflow::grid::Direction::south_east.is_orthogonal());
+            CHECK_FALSE(soak_overflow::grid::Direction::south_east.is_orthogonal());
         }
         SUBCASE("Then south west delta_x is -1 and delta_y is 1 and is not orthogonal")
         {
             CHECK(soak_overflow::grid::Direction::south_west.delta_x == -1);
             CHECK(soak_overflow::grid::Direction::south_west.delta_y == 1);
-            CHECK(!soak_overflow::grid::Direction::south_west.is_orthogonal());
+            CHECK_FALSE(soak_overflow::grid::Direction::south_west.is_orthogonal());
         }
         SUBCASE("Then west delta_x is -1 and delta_y is 0 and is orthogonal")
         {

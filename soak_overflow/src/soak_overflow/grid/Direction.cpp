@@ -16,6 +16,8 @@ namespace soak_overflow::grid
     // directions **************************************************************
     const Direction Direction::east(1, 0);
 
+    const Direction Direction::none(0, 0);
+
     const Direction Direction::north(0, -1);
 
     const Direction Direction::north_east(1, -1);

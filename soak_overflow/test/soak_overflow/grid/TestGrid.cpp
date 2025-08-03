@@ -70,7 +70,7 @@ TEST_CASE("soak_overflow::grid::Grid")
 
             CHECK(one_zero_found);
             CHECK(zero_one_found);
-            CHECK(!one_one_found);
+            CHECK_FALSE(one_one_found);
         }
 
         SUBCASE("Then the cell (2, 1) has 5 neighbors, 3 are orthogonals")

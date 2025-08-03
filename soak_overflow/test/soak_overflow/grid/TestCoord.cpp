@@ -1,6 +1,7 @@
 #include <doctest/doctest.h>
 
 #include <soak_overflow/grid/Coord.h>
+#include <soak_overflow/random/Random.h>
 
 TEST_CASE("soak_overflow::grid::Coord")
 {
@@ -36,7 +37,7 @@ TEST_CASE("soak_overflow::grid::Coord")
 
         SUBCASE("Then it is not equl to default coord")
         {
-            CHECK(!(coord == soak_overflow::grid::Coord()));
+            CHECK_FALSE(coord == soak_overflow::grid::Coord());
         }
 
         SUBCASE("Then it is equalt ot coord (2, 5)")
@@ -124,6 +125,37 @@ TEST_CASE("soak_overflow::grid::Coord")
             {
                 CHECK(west.x == 1);
                 CHECK(west.y == 5);
+            }
+        }
+    }
+
+    SUBCASE("Given two random coords")
+    {
+        for (int i(0); i < 10000; ++i)
+        {
+            soak_overflow::grid::Coord coord1(
+                soak_overflow::random::Random::random_int(12, 20),
+                soak_overflow::random::Random::random_int(6, 10)
+            );
+
+            soak_overflow::grid::Coord coord2(
+                soak_overflow::random::Random::random_int(12, 20),
+                soak_overflow::random::Random::random_int(6, 10)
+            );
+
+            SUBCASE("Then if they are the same, they have the same id")
+            {
+                if (coord1 == coord2)
+                {
+                    CHECK(coord1.get_id() == coord2.get_id());
+                }
+            }
+            SUBCASE("Then if the are not the same, they do not have the same id")
+            {
+                if (coord1 != coord2)
+                {
+                    CHECK(coord1.get_id() != coord2.get_id());
+                }
             }
         }
     }
