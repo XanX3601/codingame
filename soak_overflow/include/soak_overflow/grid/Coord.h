@@ -23,6 +23,12 @@ namespace soak_overflow::grid
     public:
         Coord apply_direction(const Direction& cr_direction) const;
 
+        Direction compute_orthogonal_direction_to(const Coord& cr_coord) const;
+
+    // distance ****************************************************************
+    public:
+        int distance_to(const Coord& cr_coord) const;
+
     // id **********************************************************************
     public:
         int get_id() const;

@@ -157,6 +157,93 @@ TEST_CASE("soak_overflow::grid::Coord")
                     CHECK(coord1.get_id() != coord2.get_id());
                 }
             }
+            SUBCASE("Then the distance from one to the other is the manhattan distance")
+            {
+                int distance1(coord1.distance_to(coord2));
+                int distance2(coord2.distance_to(coord1));
+
+                int expected_distance = (
+                    std::abs(coord1.x - coord2.x) + std::abs(coord1.y - coord2.y)
+                );
+
+                CHECK(distance1 == distance2);
+                CHECK(distance1 == expected_distance);
+            }
+            SUBCASE("Then the distance from the first to itself is 0")
+            {
+                CHECK(coord1.distance_to(coord1) == 0);
+            }
+        }
+    }
+
+    SUBCASE("Given the coord (10, 10)")
+    {
+        soak_overflow::grid::Coord coord(10, 10);
+
+        SUBCASE("Then the direction from (10, 0) to (10, 10) is down and up the other way around")
+        {
+            soak_overflow::grid::Coord other_coord(10, 0);
+            soak_overflow::grid::Direction direction1(
+                coord.compute_orthogonal_direction_to(other_coord)
+            );
+            soak_overflow::grid::Direction direction2(
+                other_coord.compute_orthogonal_direction_to(coord)
+            );
+
+            CHECK(direction1 == soak_overflow::grid::Direction::north);
+            CHECK(direction2 == soak_overflow::grid::Direction::south);
+        }
+        SUBCASE("Then the direction from (10, 20) to (10, 10) is up and down the other way around")
+        {
+            soak_overflow::grid::Coord other_coord(10, 20);
+            soak_overflow::grid::Direction direction1(
+                coord.compute_orthogonal_direction_to(other_coord)
+            );
+            soak_overflow::grid::Direction direction2(
+                other_coord.compute_orthogonal_direction_to(coord)
+            );
+
+            CHECK(direction1 == soak_overflow::grid::Direction::south);
+            CHECK(direction2 == soak_overflow::grid::Direction::north);
+        }
+        SUBCASE("Then the direction from (0, 10) to (10, 10) is right and left the other way around")
+        {
+            soak_overflow::grid::Coord other_coord(0, 10);
+            soak_overflow::grid::Direction direction1(
+                coord.compute_orthogonal_direction_to(other_coord)
+            );
+            soak_overflow::grid::Direction direction2(
+                other_coord.compute_orthogonal_direction_to(coord)
+            );
+
+            CHECK(direction1 == soak_overflow::grid::Direction::west);
+            CHECK(direction2 == soak_overflow::grid::Direction::east);
+        }
+        SUBCASE("Then the direction from (20, 10) to (10, 10) is right and left the other way around")
+        {
+            soak_overflow::grid::Coord other_coord(20, 10);
+            soak_overflow::grid::Direction direction1(
+                coord.compute_orthogonal_direction_to(other_coord)
+            );
+            soak_overflow::grid::Direction direction2(
+                other_coord.compute_orthogonal_direction_to(coord)
+            );
+
+            CHECK(direction1 == soak_overflow::grid::Direction::east);
+            CHECK(direction2 == soak_overflow::grid::Direction::west);
+        }
+        SUBCASE("Then the direction from (12, 12) to (10, 10) is north and south the other way around")
+        {
+            soak_overflow::grid::Coord other_coord(12, 12);
+            soak_overflow::grid::Direction direction1(
+                coord.compute_orthogonal_direction_to(other_coord)
+            );
+            soak_overflow::grid::Direction direction2(
+                other_coord.compute_orthogonal_direction_to(coord)
+            );
+
+            CHECK(direction1 == soak_overflow::grid::Direction::south);
+            CHECK(direction2 == soak_overflow::grid::Direction::north);
         }
     }
 }

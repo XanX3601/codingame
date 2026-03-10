@@ -1,5 +1,6 @@
 #include <soak_overflow/grid/Coord.h>
 
+#include <cmath>
 #include <iostream>
 
 namespace soak_overflow::grid
@@ -22,6 +23,24 @@ namespace soak_overflow::grid
     Coord Coord::apply_direction(const Direction& cr_direction) const
     {
         return Coord(x + cr_direction.delta_x, y + cr_direction.delta_y);
+    }
+
+    Direction Coord::compute_orthogonal_direction_to(const Coord& cr_coord) const
+    {
+        double delta_x(cr_coord.x - x);
+        double delta_y(cr_coord.y - y);
+
+        if (std::abs(delta_x) > std::abs(delta_y))
+        {
+            return {delta_x < 0 ? -1 : 1, 0};
+        }
+        return {0, delta_y < 0 ? -1 : 1};
+    }
+
+    // distance ****************************************************************
+    int Coord::distance_to(const Coord& cr_coord) const
+    {
+        return std::abs(x - cr_coord.x) + std::abs(y - cr_coord.y);
     }
 
     // id **********************************************************************

@@ -87,6 +87,8 @@ namespace soak_overflow::agent
 
     // wetness *****************************************************************
     public:
+        void get_shot(int damage);
+
         int get_wetness() const;
 
     private:

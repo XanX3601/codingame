@@ -1,34 +1,30 @@
+#include "soak_overflow/action/Throw.h"
 #include <doctest/doctest.h>
 
 #include <soak_overflow/action/Combat.h>
 
 TEST_CASE("soak_overflow::action::Combat")
 {
-    SUBCASE("Given a shoot on coord (2, 5)")
+    SUBCASE("Given a shoot on target 3")
     {
-        soak_overflow::action::Combat combat({2, 5}, false);
+        soak_overflow::action::Combat combat({3});
 
-        SUBCASE("Then its coord are (2, 5)")
+        SUBCASE("Then its target id is 3")
         {
-            CHECK(combat.get_coord() == soak_overflow::grid::Coord(2, 5));
-        }
-        SUBCASE("Then it is not thrown")
-        {
-            CHECK_FALSE(combat.is_thrown());
+            CHECK(std::get<soak_overflow::action::Shoot>(combat).get_target_id() == 3);
         }
     }
 
     SUBCASE("Given a throw on coord (5, 2)")
     {
-        soak_overflow::action::Combat combat({5, 2}, true);
+        soak_overflow::action::Combat combat(soak_overflow::action::Throw({5 ,2}));
 
         SUBCASE("Then its coord are (5, 2)")
         {
-            CHECK(combat.get_coord() == soak_overflow::grid::Coord(5, 2));
-        }
-        SUBCASE("Then it is thrown")
-        {
-            CHECK(combat.is_thrown());
+            CHECK(
+                std::get<soak_overflow::action::Throw>(combat).get_coord()
+                    == soak_overflow::grid::Coord(5, 2)
+            );
         }
     }
 }

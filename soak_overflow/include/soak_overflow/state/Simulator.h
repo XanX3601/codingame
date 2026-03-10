@@ -3,8 +3,13 @@
 
 #include <deque>
 #include <unordered_map>
+#include <unordered_set>
 
+#include <soak_overflow/action/Combat.h>
+#include <soak_overflow/action/Shoot.h>
+#include <soak_overflow/action/Throw.h>
 #include <soak_overflow/action/Move.h>
+#include <soak_overflow/grid/Coord.h>
 #include <soak_overflow/grid/Grid.h>
 #include <soak_overflow/state/State.h>
 
@@ -39,10 +44,29 @@ namespace soak_overflow::state
             std::unordered_map<int, const action::Move*> agent_id_to_move
         );
 
-    private:
-        std::deque<int> __agent_ids_deque;
+        void apply_to(
+            State& r_state,
+            std::unordered_map<int, action::Combat> agent_id_to_combat
+        );
 
-        std::unordered_set<int> __agent_ids_set;
+    private:
+        std::deque<int> __agent_ids_queue;
+
+        std::unordered_set<int> __seen_agent_ids;
+
+        std::unordered_set<int> __forbidden_coord_ids;
+
+        void __apply_to(
+            State& r_state,
+            int agent_id,
+            const action::Shoot& cr_shoot
+        );
+
+        void __apply_to(
+            State& r_state,
+            int agent_id,
+            const action::Throw& cr_throw
+        );
     };
 }
 

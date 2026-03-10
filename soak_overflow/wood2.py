@@ -212,6 +212,7 @@ class TileMap:
         return compute_vertical_line(x0, y0, x1, y1)
 
     def compute_orthogonally_direction(self, x0, y0, x1, y1):
+
         delta_x = x1 - x0
         delta_y = y1 - y0
 

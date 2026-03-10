@@ -9,6 +9,8 @@ namespace soak_overflow::state
     {
     // agent *******************************************************************
     public:
+        agent::AgentCollection& get_agent_collection();
+
         const agent::AgentCollection& get_agent_collection() const;
 
     private:
@@ -31,9 +33,6 @@ namespace soak_overflow::state
         State& operator=(const State& cr_state) = delete;
 
         State& operator=(State&& rv_state) noexcept = default;
-
-    // simulation
-    friend class Simulator;
 
     // update ******************************************************************
     public:

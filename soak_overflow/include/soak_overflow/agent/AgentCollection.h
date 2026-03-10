@@ -26,6 +26,8 @@ namespace soak_overflow::agent
 
         void raise_agent(int agent_id);
 
+        void shoot_agent(int agent_id, int damage);
+
     private:
         std::unordered_map<int, Agent> __agent_id_to_agent;
 

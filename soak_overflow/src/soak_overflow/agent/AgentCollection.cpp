@@ -52,6 +52,11 @@ namespace soak_overflow::agent
         __agent_id_to_agent.at(agent_id).stand_up();
     }
 
+    void AgentCollection::shoot_agent(int agent_id, int damage)
+    {
+        __agent_id_to_agent.at(agent_id).get_shot(damage);
+    }
+
     // agent data **************************************************************
     const AgentDataCollection* AgentCollection::get_agent_data_collection() const
     {

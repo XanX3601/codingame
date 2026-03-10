@@ -114,6 +114,15 @@ namespace soak_overflow::agent
     }
 
     // wetness *****************************************************************
+    void Agent::get_shot(int damage) 
+    {
+        __wetness += damage;
+        if (__wetness >= 100)
+        {
+            __alive = false;
+        }
+    }
+
     int Agent::get_wetness() const
     {
         return __wetness;

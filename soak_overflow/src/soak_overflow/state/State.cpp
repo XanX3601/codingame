@@ -3,6 +3,11 @@
 namespace soak_overflow::state
 {
     // agent *******************************************************************
+    agent::AgentCollection& State::get_agent_collection()
+    {
+        return __agent_collection;
+    }
+
     const agent::AgentCollection& State::get_agent_collection() const
     {
         return __agent_collection;
