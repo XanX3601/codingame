@@ -1,13 +1,11 @@
 fn main() {
-    let stdin = std::io::stdin();
-    let handle = stdin.lock();
-    let reader = std::io::BufReader::new(handle);
+    let game_definition = snakerust::state::GameDefinition::from_buffer(std::io::stdin().lock());
+    let mut game_state = snakerust::state::GameState::new(&game_definition);
 
-    let game_definition = snakerust::state::GameDefinition::from_buffer(reader);
-
-    eprintln!("{game_definition:?}");
 
     while true {
+        game_state.update_from_buffer(std::io::stdin().lock());
+
         println!("WAIT")
     }
 }
