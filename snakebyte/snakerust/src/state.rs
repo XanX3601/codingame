@@ -1,10 +1,8 @@
-use std::collections;
-
 use crate::action;
 use crate::bitboard;
 use crate::snake;
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 pub struct GameDefinition {
     enemy_snake_ids: std::collections::HashSet<u32>,
     my_id: u32,
@@ -103,7 +101,226 @@ impl GameDefinition {
     }
 }
 
-#[derive(Clone)]
+pub struct GameSimulator {
+    collision_bitboard: bitboard::Bitboard,
+    gravity_bitboard: bitboard::Bitboard,
+    power_sources_to_remove: Vec<(u32, u32)>,
+}
+
+impl<'a> GameSimulator {
+    pub fn apply(&mut self, game_state: &GameState<'a>, actions: &std::collections::HashMap<u32, action::Direction>) -> GameState<'a> {
+        let mut next_game_state = game_state.clone();
+
+        // collision = platform + other snakes
+        self.collision_bitboard = game_state.game_definition.platform_bitboard.clone();
+        // gravity = platform + other snakes + power sources
+        self.gravity_bitboard = game_state.game_definition.platform_bitboard.or(
+            &game_state.power_source_bitboard
+        );
+
+        // first move all snakes and update collision board for later purpose
+        for (snake_id, snake) in next_game_state.snake_id_to_snake.iter_mut() {
+            if actions.contains_key(snake_id) {
+                snake.move_toward(actions[snake_id].clone());
+            }
+            else {
+                snake.move_same_direction();
+            }
+
+            if *snake_id == 1 {
+                println!("{snake:?}");
+                let is_not_empty = snake.get_body_bitboard().is_not_empty();
+                println!("{is_not_empty:?}")
+            }
+
+            // add the entire snake as collision, head not included
+            snake.with_headless_body_bitboard(
+                |body_bitboar| {self.collision_bitboard.or_inplace(body_bitboar)}
+            );
+
+            // add the entire snake as gravity, head included
+            self.gravity_bitboard.or_inplace(snake.get_body_bitboard());
+            if *snake_id == 1 {
+                println!("gravity bitboard after snake 1 moved");
+                for y in 0..10 {
+                    for x in 0..18 {
+                        let c = if self.gravity_bitboard.is_on(x, y) {'#'} else {'.'};
+                        print!("{c} ");
+                    }
+                    println!("");
+                }
+                println!("");
+            }
+        }
+
+        self.power_sources_to_remove.clear();
+        
+        // second, check if snakes grow, collision with something and then
+        // should fall
+        for (snake_id, snake) in next_game_state.snake_id_to_snake.iter_mut() {
+            if !snake.get_body_bitboard().is_not_empty() {
+                continue;
+            }
+
+            let (head_x, head_y) = snake.get_head();
+
+            if *snake_id == 1 {
+                println!("snake 1 head before colliding with power source");
+                for y in 0..10 {
+                    for x in 0..18 {
+                        let c = if snake.get_body_bitboard().is_on(x, y) {'#'} else {'.'};
+                        print!("{c} ");
+                    }
+                    println!("");
+                }
+                let head = snake.get_head();
+                println!("head {head:?}");
+                println!("");
+            }
+
+            if *snake_id == 1 {
+                println!("power sources bitboard before snake 1 grows");
+                for y in 0..10 {
+                    for x in 0..18 {
+                        let c = if next_game_state.power_source_bitboard.is_on(x, y) {'#'} else {'.'};
+                        print!("{c} ");
+                    }
+                    println!("");
+                }
+                println!("");
+            }
+
+            // check if the snake eats a power source by checking if the head
+            // collides with any power sources
+            if snake.does_head_collide(&next_game_state.power_source_bitboard) {
+                // as snake can eat the same power source, do not remove it right
+                // away, keep it for later
+                // if it collides with the power source bitboard, it is obviously
+                // positive
+                self.power_sources_to_remove.push((*head_x as u32, *head_y as u32));
+
+                // grow the snake and add its new body part to collision and
+                // gravity
+                snake.grow();
+                snake.with_headless_body_bitboard(
+                    |body_bitboar| {self.collision_bitboard.or_inplace(body_bitboar)}
+                );
+                self.gravity_bitboard.or_inplace(snake.get_body_bitboard());
+
+                if *snake_id == 1 {
+                    println!("gravity bitboard after snake 1 grew");
+                    for y in 0..10 {
+                        for x in 0..18 {
+                            let c = if self.gravity_bitboard.is_on(x, y) {'#'} else {'.'};
+                            print!("{c} ");
+                        }
+                        println!("");
+                    }
+                    println!("");
+                }
+            }
+
+            // check if the head collide with the collision bitboard 
+            // approximation: two head cannot collide one with another
+            if snake.does_head_collide(&self.collision_bitboard) {
+                snake.remove_head();
+            }
+
+            if *snake_id == 1 {
+                println!("gravity bitboard before substracting snake bitboard");
+                for y in 0..10 {
+                    for x in 0..18 {
+                        let c = if self.gravity_bitboard.is_on(x, y) {'#'} else {'.'};
+                        print!("{c} ");
+                    }
+                    println!("");
+                }
+                println!("");
+            }
+
+            if *snake_id == 1 {
+                println!("snake 1 bitboard before removing it from gravity");
+                for y in 0..10 {
+                    for x in 0..18 {
+                        let c = if snake.get_body_bitboard().is_on(x, y) {'#'} else {'.'};
+                        print!("{c} ");
+                    }
+                    println!("");
+                }
+                println!("");
+            }
+
+            // remove the snake body from the gravity so it does not collide
+            // with itself
+            self.gravity_bitboard.xor_inplace(snake.get_body_bitboard());
+
+            if *snake_id == 1 {
+                println!("gravity bitboard after snake is removed from it");
+                for y in 0..10 {
+                    for x in 0..18 {
+                        let c = if self.gravity_bitboard.is_on(x, y) {'#'} else {'.'};
+                        print!("{c} ");
+                    }
+                    println!("");
+                }
+                println!("");
+            }
+
+
+            // move the gravity up so it represents every cell above a platform,
+            // power source or other snake
+            let gravity_up_bitboard = self.gravity_bitboard.move_up();
+
+            // while snake do not collide with gravity_bitboard, move it down
+            let mut step = 0;
+            while !snake.does_collide(&gravity_up_bitboard) {
+                snake.move_hitbox_down();
+                step += 1;
+            }
+
+            // once we know how much the snake has to go down, move its body down
+            if step > 0 {
+                snake.move_body_down(step);
+            }
+
+            // add the snake body back to gravity
+            self.gravity_bitboard.or_inplace(snake.get_body_bitboard());
+        }
+
+        // so now, snakes have moved, grew if colliding with power sources
+        // shrinked if colliding with anything but head and fall down
+
+        // let's remove the power sources
+        for (x, y) in self.power_sources_to_remove.iter() {
+            next_game_state.power_source_bitboard.turn_off(*x, *y);
+        }
+
+        // remove the snakes with len < 3, they are dead
+        next_game_state.snake_id_to_snake
+            .retain(|&snake_id, snake| {
+                let len = snake.len();
+                let is_not_empty = snake.get_body_bitboard().is_not_empty();
+                let retain = len >= 3 && is_not_empty;
+                println!("retain ? {len:?} {is_not_empty:?} ? {retain:?}");
+
+                    retain
+            });
+
+        println!("after death: {:?}", next_game_state.snake_id_to_snake);
+
+        next_game_state
+    }
+
+    pub fn new(grid_width: u32) -> GameSimulator {
+        GameSimulator{
+            collision_bitboard: bitboard::Bitboard::new(grid_width),
+            gravity_bitboard: bitboard::Bitboard::new(grid_width),
+            power_sources_to_remove: Vec::with_capacity(4),
+        }
+    }
+}
+
+#[derive(Clone, Debug, PartialEq)]
 pub struct GameState<'a> {
     game_definition: &'a GameDefinition,
     power_source_bitboard: bitboard::Bitboard,
@@ -157,6 +374,7 @@ impl<'a> GameState<'a> {
             .parse::<u32>()
             .unwrap();
 
+        let mut snake_ids = std::collections::HashSet::new();
         for _ in 0..snakebot_count {
             let mut input_line = String::new();
             reader.read_line(&mut input_line).unwrap();
@@ -165,6 +383,7 @@ impl<'a> GameState<'a> {
                 .split_whitespace()
                 .into_iter();
             let snake_id = snake_iter.next().unwrap().parse::<u32>().unwrap();
+            snake_ids.insert(snake_id);
             let snake = self.snake_id_to_snake.get_mut(&snake_id).unwrap();
             snake.clear();
             snake_iter
@@ -188,72 +407,493 @@ impl<'a> GameState<'a> {
                     }
                 )
         }
-    }
 
-    pub fn apply(&self, actions: &std::collections::HashMap<u32, action::Direction>) -> GameState<'a> {
-        let mut next_game_state = self.clone();
-
-        // prepare collision bitboard for the second step
-        let mut collision_bitboard = self.game_definition.platform_bitboard.clone();
-
-        // first move all snakes based on their given actions, otherwise, keep
-        // pushing in the same direction
-        next_game_state.snake_id_to_snake
-            .iter_mut()
-            .for_each(|(snake_id, snake)| {
-                if actions.contains_key(snake_id) {
-                    snake.move_toward(actions[snake_id].clone());
-                }
-                else {
-                    snake.move_same_direction();
-                    println!("keep pushsing {snake_id}")
-                }
-
-                snake.with_headless_body_bitboard(
-                    |body_bitboard| {collision_bitboard.or(&body_bitboard);}
-                );
-            });
-
-        let mut gravity_bitboard = collision_bitboard.clone();
-        gravity_bitboard.move_up();
-
-        // second, test if a snake eat a power source and therefore, grows and,
-        // if its head collide with something, it is destroyed
-        next_game_state.snake_id_to_snake
-            .iter_mut()
-            .for_each(|(snake_id, snake)| {
-                if snake.does_head_collide(&self.power_source_bitboard) {
-                    snake.grow();
-                    gravity_bitboard.or(snake.get_body_bitboard());
-                }
-
-                if snake.does_head_collide(&collision_bitboard) {
-                    snake.remove_head();
-                }
-
-                let mut step = 0;
-                while !snake.does_collide(&gravity_bitboard) {
-                    step += 1;
-                    snake.move_hitbox_down();
-                }
-
-                if step > 0 {
-                    snake.move_body_down(step);
-                }
-            });
-
-        next_game_state.snake_id_to_snake = next_game_state.snake_id_to_snake
-            .into_iter()
-            .filter(|(snake_id, snake)| {snake.len() >= 3})
-            .collect();
-
-        next_game_state
+        self.snake_id_to_snake.retain(|snake_id, _| snake_ids.contains(snake_id));
     }
 }
 
 #[cfg(test)]
 mod test {
     use super::*;
+    use pretty_assertions::assert_eq;
+
+    #[test] fn can_apply_actions() {
+        let input = r#"0
+            18
+            10
+            ..................
+            ..................
+            ..................
+            ..#............#..
+            ...#....##....#...
+            ..................
+            ..................
+            .......#..#.......
+            ..#...##..##...#..
+            ##################
+            2
+            0
+            1
+            2
+            3
+        "#;
+
+        let cursor = std::io::Cursor::new(input.as_bytes());
+        let reader = std::io::BufReader::new(cursor);
+
+        let game_definition = GameDefinition::from_buffer(reader);
+
+        let mut game_state = GameState::new(&game_definition);
+
+        let input = r#"18
+            0 2
+            17 2
+            4 2
+            13 2
+            7 4
+            10 4
+            6 5
+            11 5
+            0 1
+            17 1
+            5 4
+            12 4
+            0 5
+            17 5
+            5 6
+            12 6
+            0 7
+            17 7
+            4
+            0 2,5:2,6:2,7
+            1 15,0:15,1:15,2
+            2 15,5:15,6:15,7
+            3 2,0:2,1:2,2
+        "#;
+
+        let cursor = std::io::Cursor::new(input.as_bytes());
+        let reader = std::io::BufReader::new(cursor);
+
+        game_state.update_from_buffer(reader);
+
+        let mut simulator = GameSimulator::new(game_definition.grid_width);
+
+        let mut expected_game_state = game_state.clone();
+
+        let mut actions = std::collections::HashMap::new();
+        actions.insert(1, action::Direction::Right);
+        actions.insert(2, action::Direction::Right);
+        actions.insert(3, action::Direction::Left);
+        let game_state = simulator.apply(&game_state, &actions);
+
+        let input = r#"18
+            0 2
+            17 2
+            4 2
+            13 2
+            7 4
+            10 4
+            6 5
+            11 5
+            0 1
+            17 1
+            5 4
+            12 4
+            0 5
+            17 5
+            5 6
+            12 6
+            0 7
+            17 7
+            4
+            0 2,5:2,6:2,7
+            1 16,1:15,1:15,2
+            2 16,6:15,6:15,7
+            3 1,1:2,1:2,2
+        "#;
+        let cursor = std::io::Cursor::new(input.as_bytes());
+        let reader = std::io::BufReader::new(cursor);
+        expected_game_state.update_from_buffer(reader);
+
+        assert_eq!(game_state, expected_game_state);
+
+        let mut actions = std::collections::HashMap::new();
+        actions.insert(1, action::Direction::Right);
+        actions.insert(2, action::Direction::Up);
+        actions.insert(3, action::Direction::Left);
+        let game_state = simulator.apply(&game_state, &actions);
+
+        let input = r#"16
+            0 2
+            17 2
+            4 2
+            13 2
+            7 4
+            10 4
+            6 5
+            11 5
+            5 4
+            12 4
+            0 5
+            17 5
+            5 6
+            12 6
+            0 7
+            17 7
+            4
+            0 2,5:2,6:2,7
+            1 17,1:16,1:15,1:15,2
+            2 16,6:16,7:15,7
+            3 0,1:1,1:2,1:2,2
+        "#;
+        let cursor = std::io::Cursor::new(input.as_bytes());
+        let reader = std::io::BufReader::new(cursor);
+        expected_game_state.update_from_buffer(reader);
+
+        assert_eq!(game_state, expected_game_state);
+
+        let mut actions = std::collections::HashMap::new();
+        actions.insert(1, action::Direction::Right);
+        actions.insert(2, action::Direction::Up);
+        actions.insert(3, action::Direction::Down);
+        let game_state = simulator.apply(&game_state, &actions);
+
+        let input = r#"15
+            17 2
+            4 2
+            13 2
+            7 4
+            10 4
+            6 5
+            11 5
+            5 4
+            12 4
+            0 5
+            17 5
+            5 6
+            12 6
+            0 7
+            17 7
+            4
+            0 2,5:2,6:2,7
+            1 18,1:17,1:16,1:15,1
+            2 16,6:16,7:16,8
+            3 0,2:0,1:1,1:2,1:2,2
+        "#;
+        let cursor = std::io::Cursor::new(input.as_bytes());
+        let reader = std::io::BufReader::new(cursor);
+        expected_game_state.update_from_buffer(reader);
+
+        assert_eq!(game_state, expected_game_state);
+
+        let mut actions = std::collections::HashMap::new();
+        actions.insert(1, action::Direction::Right);
+        actions.insert(2, action::Direction::Up);
+        actions.insert(3, action::Direction::Down);
+        let game_state = simulator.apply(&game_state, &actions);
+
+        let input = r#"15
+            17 2
+            4 2
+            13 2
+            7 4
+            10 4
+            6 5
+            11 5
+            5 4
+            12 4
+            0 5
+            17 5
+            5 6
+            12 6
+            0 7
+            17 7
+            4
+            0 2,5:2,6:2,7
+            1 19,1:18,1:17,1:16,1
+            2 16,6:16,7:16,8
+            3 0,4:0,3:0,2:1,2:2,2
+        "#;
+        let cursor = std::io::Cursor::new(input.as_bytes());
+        let reader = std::io::BufReader::new(cursor);
+        expected_game_state.update_from_buffer(reader);
+
+        assert_eq!(game_state, expected_game_state);
+
+        let mut actions = std::collections::HashMap::new();
+        actions.insert(1, action::Direction::Right);
+        actions.insert(2, action::Direction::Up);
+        actions.insert(3, action::Direction::Down);
+        let game_state = simulator.apply(&game_state, &actions);
+
+        let input = r#"14
+            17 2
+            4 2
+            13 2
+            7 4
+            10 4
+            6 5
+            11 5
+            5 4
+            12 4
+            17 5
+            5 6
+            12 6
+            0 7
+            17 7
+            4
+            0 2,5:2,6:2,7
+            1 20,1:19,1:18,1:17,1
+            2 16,6:16,7:16,8
+            3 0,5:0,4:0,3:0,2:1,2:2,2
+        "#;
+        let cursor = std::io::Cursor::new(input.as_bytes());
+        let reader = std::io::BufReader::new(cursor);
+        expected_game_state.update_from_buffer(reader);
+
+        assert_eq!(game_state, expected_game_state);
+
+        let mut actions = std::collections::HashMap::new();
+        actions.insert(1, action::Direction::Right);
+        actions.insert(2, action::Direction::Up);
+        actions.insert(3, action::Direction::Down);
+        let game_state = simulator.apply(&game_state, &actions);
+
+        let input = r#"14
+            17 2
+            4 2
+            13 2
+            7 4
+            10 4
+            6 5
+            11 5
+            5 4
+            12 4
+            17 5
+            5 6
+            12 6
+            0 7
+            17 7
+            3
+            0 2,5:2,6:2,7
+            2 16,6:16,7:16,8
+            3 0,6:0,5:0,4:0,3:0,2:1,2
+        "#;
+        let cursor = std::io::Cursor::new(input.as_bytes());
+        let reader = std::io::BufReader::new(cursor);
+        expected_game_state.update_from_buffer(reader);
+
+        assert_eq!(game_state, expected_game_state);
+
+        let mut actions = std::collections::HashMap::new();
+        actions.insert(1, action::Direction::Right);
+        actions.insert(2, action::Direction::Up);
+        actions.insert(3, action::Direction::Down);
+        let game_state = simulator.apply(&game_state, &actions);
+
+        let input = r#"13
+            17 2
+            4 2
+            13 2
+            7 4
+            10 4
+            6 5
+            11 5
+            5 4
+            12 4
+            17 5
+            5 6
+            12 6
+            17 7
+            3
+            0 2,5:2,6:2,7
+            2 16,6:16,7:16,8
+            3 0,8:0,7:0,6:0,5:0,4:0,3:1,3
+        "#;
+        let cursor = std::io::Cursor::new(input.as_bytes());
+        let reader = std::io::BufReader::new(cursor);
+        expected_game_state.update_from_buffer(reader);
+
+        assert_eq!(game_state, expected_game_state);
+
+        let mut actions = std::collections::HashMap::new();
+        actions.insert(1, action::Direction::Right);
+        actions.insert(2, action::Direction::Up);
+        let game_state = simulator.apply(&game_state, &actions);
+
+        let input = r#"13
+            17 2
+            4 2
+            13 2
+            7 4
+            10 4
+            6 5
+            11 5
+            5 4
+            12 4
+            17 5
+            5 6
+            12 6
+            17 7
+            3
+            0 2,5:2,6:2,7
+            2 16,6:16,7:16,8
+            3 0,8:0,7:0,6:0,5:0,4:0,3
+        "#;
+        let cursor = std::io::Cursor::new(input.as_bytes());
+        let reader = std::io::BufReader::new(cursor);
+        expected_game_state.update_from_buffer(reader);
+
+        assert_eq!(game_state, expected_game_state);
+
+        let mut actions = std::collections::HashMap::new();
+        actions.insert(1, action::Direction::Right);
+        actions.insert(2, action::Direction::Up);
+        let game_state = simulator.apply(&game_state, &actions);
+
+        let input = r#"13
+            17 2
+            4 2
+            13 2
+            7 4
+            10 4
+            6 5
+            11 5
+            5 4
+            12 4
+            17 5
+            5 6
+            12 6
+            17 7
+            3
+            0 2,5:2,6:2,7
+            2 16,6:16,7:16,8
+            3 0,8:0,7:0,6:0,5:0,4
+        "#;
+        let cursor = std::io::Cursor::new(input.as_bytes());
+        let reader = std::io::BufReader::new(cursor);
+        expected_game_state.update_from_buffer(reader);
+
+        assert_eq!(game_state, expected_game_state);
+
+        let mut actions = std::collections::HashMap::new();
+        actions.insert(1, action::Direction::Right);
+        actions.insert(2, action::Direction::Up);
+        let game_state = simulator.apply(&game_state, &actions);
+
+        let input = r#"13
+            17 2
+            4 2
+            13 2
+            7 4
+            10 4
+            6 5
+            11 5
+            5 4
+            12 4
+            17 5
+            5 6
+            12 6
+            17 7
+            3
+            0 2,5:2,6:2,7
+            2 16,6:16,7:16,8
+            3 0,8:0,7:0,6:0,5
+        "#;
+        let cursor = std::io::Cursor::new(input.as_bytes());
+        let reader = std::io::BufReader::new(cursor);
+        expected_game_state.update_from_buffer(reader);
+
+        assert_eq!(game_state, expected_game_state);
+
+        let mut actions = std::collections::HashMap::new();
+        actions.insert(1, action::Direction::Right);
+        actions.insert(2, action::Direction::Up);
+        let game_state = simulator.apply(&game_state, &actions);
+
+        let input = r#"13
+            17 2
+            4 2
+            13 2
+            7 4
+            10 4
+            6 5
+            11 5
+            5 4
+            12 4
+            17 5
+            5 6
+            12 6
+            17 7
+            3
+            0 2,5:2,6:2,7
+            2 16,6:16,7:16,8
+            3 0,8:0,7:0,6
+        "#;
+        let cursor = std::io::Cursor::new(input.as_bytes());
+        let reader = std::io::BufReader::new(cursor);
+        expected_game_state.update_from_buffer(reader);
+
+        assert_eq!(game_state, expected_game_state);
+
+        let mut actions = std::collections::HashMap::new();
+        actions.insert(1, action::Direction::Right);
+        actions.insert(2, action::Direction::Up);
+        let game_state = simulator.apply(&game_state, &actions);
+
+        let input = r#"13
+            17 2
+            4 2
+            13 2
+            7 4
+            10 4
+            6 5
+            11 5
+            5 4
+            12 4
+            17 5
+            5 6
+            12 6
+            17 7
+            2
+            0 2,5:2,6:2,7
+            2 16,6:16,7:16,8
+        "#;
+        let cursor = std::io::Cursor::new(input.as_bytes());
+        let reader = std::io::BufReader::new(cursor);
+        expected_game_state.update_from_buffer(reader);
+
+        assert_eq!(game_state, expected_game_state);
+
+        let mut actions = std::collections::HashMap::new();
+        actions.insert(1, action::Direction::Right);
+        actions.insert(2, action::Direction::Up);
+        let game_state = simulator.apply(&game_state, &actions);
+
+        let input = r#"13
+            17 2
+            4 2
+            13 2
+            7 4
+            10 4
+            6 5
+            11 5
+            5 4
+            12 4
+            17 5
+            5 6
+            12 6
+            17 7
+            2
+            0 2,5:2,6:2,7
+            2 16,6:16,7:16,8
+        "#;
+        let cursor = std::io::Cursor::new(input.as_bytes());
+        let reader = std::io::BufReader::new(cursor);
+        expected_game_state.update_from_buffer(reader);
+
+        assert_eq!(game_state, expected_game_state);
+    }
 
     #[test]
     fn can_create_game_definition_from_buffer() {

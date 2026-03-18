@@ -1,7 +1,7 @@
 use crate::action;
 use crate::bitboard;
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug)]
 pub struct Snake {
     body: std::collections::VecDeque<(i32, i32)>,
     body_bitboard: bitboard::Bitboard,
@@ -12,7 +12,7 @@ pub struct Snake {
 impl Snake {
     pub fn add_body_part(&mut self, x: i32, y: i32) {
         self.body.push_back((x, y));
-        if x >= 0 && y >= 0 {
+        if x >= 0 && x < self.body_bitboard.get_width() as i32 && y >= 0 {
             self.body_bitboard.turn_on(x as u32, y as u32);
         }
         self.tail_last_position = None;
@@ -34,11 +34,18 @@ impl Snake {
             None => panic!("attempt to collide an empty snake"),
         };
 
-        *head_x >= 0 && *head_y >= 0 && bitboard.is_on(*head_x as u32, *head_y as u32)
+        *head_x >= 0 && *head_x < self.body_bitboard.get_width() as i32 && *head_y >= 0 && bitboard.is_on(*head_x as u32, *head_y as u32)
     }
 
     pub fn get_body_bitboard(&self) -> &bitboard::Bitboard {
         &self.body_bitboard
+    }
+
+    pub fn get_head(&self) -> &(i32, i32) {
+        match self.body.front() {
+            Some(head) => head,
+            None => panic!("attempt to get head of empty snake")
+        }
     }
 
     pub fn grow(&mut self) {
@@ -72,7 +79,7 @@ impl Snake {
     }
 
     pub fn move_hitbox_down(&mut self) {
-        self.body_bitboard.move_down();
+        self.body_bitboard.move_down_in_place();
     }
 
     pub fn move_same_direction(&mut self) {
@@ -92,7 +99,7 @@ impl Snake {
             Some(tail) => tail,
             None => panic!("attempt to move an empty snake"),
         };
-        if tail_x >= 0 && tail_y >= 0 {
+        if tail_x >= 0 && tail_x < self.body_bitboard.get_width() as i32 && tail_y >= 0 {
             self.body_bitboard.turn_off(tail_x as u32, tail_y as u32);
         }
         self.tail_last_position = Some((tail_x, tail_y));
@@ -103,7 +110,7 @@ impl Snake {
         };
         let (new_head_x, new_head_y) = direction.apply(*head_x, *head_y);
         self.body.push_front((new_head_x, new_head_y));
-        if new_head_x >= 0 && new_head_y >= 0 {
+        if new_head_x >= 0 && new_head_x < self.body_bitboard.get_width() as i32 && new_head_y >= 0 {
             self.body_bitboard.turn_on(new_head_x as u32, new_head_y as u32);
         }
         self.direction = direction;
@@ -124,7 +131,7 @@ impl Snake {
             None => panic!("attempt to remove head of empty snake")
         };
 
-        if previous_head_x >= 0 && previous_head_y >= 0 {
+        if previous_head_x >= 0 && previous_head_x < self.body_bitboard.get_width() as i32 && previous_head_y >= 0 {
             self.body_bitboard.turn_off(previous_head_x as u32, previous_head_y as u32);
         }
     }
@@ -138,17 +145,25 @@ impl Snake {
             None => panic!("attempting to do something to an empty snake"),
         };
 
-        if *head_x >= 0 && *head_y >= 0 {
+        let must_turn_off_head = *head_x >= 0 && *head_x < self.body_bitboard.get_width() as i32 && *head_y >= 0;
+        if must_turn_off_head {
             self.body_bitboard.turn_off(*head_x as u32, *head_y as u32);
         }
 
         let result = f(&self.body_bitboard);
 
-        if *head_x >= 0 && *head_y >= 0 {
+        if must_turn_off_head {
             self.body_bitboard.turn_on(*head_x as u32, *head_y as u32);
         }
 
         result
+    }
+}
+
+impl PartialEq for Snake {
+    fn eq(&self, other: &Snake) -> bool {
+        self.body == other.body
+            && self.body_bitboard == other.body_bitboard
     }
 }
 
@@ -486,6 +501,31 @@ mod test {
         assert_eq!(snake.body_bitboard, expected_body_bitboard);
         assert_eq!(snake.direction, action::Direction::Down);
         assert_eq!(snake.tail_last_position, Some((1, 1)));
+    }
+
+    #[test]
+    fn can_move_outside() {
+        let mut snake = Snake::new(18);
+        snake.add_body_part(17, 1);
+        snake.add_body_part(16, 1);
+        snake.add_body_part(15, 1);
+        snake.add_body_part(15, 2);
+
+        snake.move_toward(action::Direction::Right);
+
+        let mut expected_body_parts = std::collections::VecDeque::new();
+        expected_body_parts.push_back((18, 1));
+        expected_body_parts.push_back((17, 1));
+        expected_body_parts.push_back((16, 1));
+        expected_body_parts.push_back((15, 1));
+
+        let mut expected_body_bitboard = bitboard::Bitboard::new(18);
+        expected_body_bitboard.turn_on(17, 1);
+        expected_body_bitboard.turn_on(16, 1);
+        expected_body_bitboard.turn_on(15, 1);
+
+        assert_eq!(snake.body, expected_body_parts);
+        assert_eq!(snake.body_bitboard, expected_body_bitboard);
     }
 
     #[test]

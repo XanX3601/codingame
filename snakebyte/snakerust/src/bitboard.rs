@@ -1,5 +1,3 @@
-use crate::bitboard;
-
 #[derive(Clone, Debug, PartialEq)]
 pub struct Bitboard {
     bits: [u64; 22],
@@ -23,12 +21,20 @@ impl Bitboard {
         false
     }
 
+    pub fn get_width(&self) -> u32 {
+        self.width
+    }
+
+    pub fn is_not_empty(&self) -> bool {
+        self.bits.iter().any(|&bit| bit != 0)
+    }
+
     pub fn is_on(&self, x: u32, y: u32) -> bool {
         let bit_index = (y * self.width + x) as usize;
         (self.bits[bit_index / 64] >> (bit_index % 64)) & 1 == 1
     }
 
-    pub fn move_down(&mut self) {
+    pub fn move_down_in_place(&mut self) {
         let inv_width = 64 - self.width;
 
         for i in (0..self.bits.len()).rev() {
@@ -40,10 +46,29 @@ impl Bitboard {
         }
     }
 
-    pub fn move_up(&mut self) {
+    pub fn move_up(&self) -> Bitboard {
+        let mut bits: [u64; 22] = [0; 22];
+
         let inv_width = 64 - self.width;
 
-        for i in 0..self.bits.len() {
+        for i in 0..22 {
+            bits[i] |= self.bits[i] >> self.width;
+
+            if i + 1 < self.bits.len() {
+                bits[i] |= self.bits[i + 1] << inv_width;
+            }
+        }
+
+        Bitboard {
+            bits: bits,
+            width: self.width,
+        }
+    }
+
+    pub fn move_up_in_place(&mut self) {
+        let inv_width = 64 - self.width;
+
+        for i in 0..22 {
             self.bits[i] >>= self.width;
 
             if i + 1 < self.bits.len() {
@@ -59,15 +84,23 @@ impl Bitboard {
         }
     }
 
-    pub fn or(&mut self, bitboard: &Bitboard) {
-        for i in 0..self.bits.len() {
-            self.bits[i] |= bitboard.bits[i];
+    pub fn or(&self, bitboard: &Bitboard) -> Bitboard {
+        let mut bits: [u64; 22] = [0; 22];
+        
+        for i in 0..22 {
+            bits[i] |= self.bits[i] | bitboard.bits[i]
+        }
+
+        Bitboard {
+            bits: bits,
+            width: self.width.clone()
         }
     }
 
-    pub fn toggle(&mut self, x: u32, y: u32) {
-        let bit_index = (y * self.width + x) as usize;
-        self.bits[bit_index / 64] ^= 1 << (bit_index % 64);
+    pub fn or_inplace(&mut self, bitboard: &Bitboard) {
+        for i in 0..22 {
+            self.bits[i] |= bitboard.bits[i];
+        }
     }
 
     pub fn turn_on(&mut self, x: u32, y: u32) {
@@ -78,6 +111,23 @@ impl Bitboard {
     pub fn turn_off(&mut self, x: u32, y: u32) {
         let bit_index = (y * self.width + x) as usize;
         self.bits[bit_index / 64] &= !(1 << (bit_index % 64));
+    }
+
+    pub fn xor(& self, bitboard: &Bitboard) -> Bitboard{
+        let mut bits: [u64; 22] = [0; 22];
+        for i in 0..22 {
+            bits[i] = self.bits[i] ^ bitboard.bits[i];
+        }
+
+        Bitboard {
+            bits: bits,
+            width: self.width.clone(),
+        }
+    }
+    pub fn xor_inplace(&mut self, bitboard: &Bitboard) {
+        for i in 0..22 {
+            self.bits[i] ^= bitboard.bits[i];
+        }
     }
 }
 
@@ -150,7 +200,7 @@ mod test {
     fn can_move_down() {
         let mut bitboard = bitboard::Bitboard::new(5);
 
-        bitboard.toggle(0, 0);
+        bitboard.turn_on(0, 0);
 
         for x in 0..5 {
             for y in 0..5 {
@@ -167,7 +217,7 @@ mod test {
             bitboard.turn_on(x, 4);
         }
 
-        bitboard.move_down();
+        bitboard.move_down_in_place();
 
         for x in 0..5 {
             for y in 0..5 {
@@ -180,7 +230,7 @@ mod test {
             }
         }
 
-        bitboard.move_down();
+        bitboard.move_down_in_place();
 
         for x in 0..5 {
             for y in 0..5 {
@@ -193,7 +243,7 @@ mod test {
             }
         }
 
-        bitboard.move_down();
+        bitboard.move_down_in_place();
 
         for x in 0..5 {
             for y in 0..5 {
@@ -206,7 +256,7 @@ mod test {
             }
         }
 
-        bitboard.move_down();
+        bitboard.move_down_in_place();
 
         for x in 0..5 {
             for y in 0..5 {
@@ -219,7 +269,7 @@ mod test {
             }
         }
 
-        bitboard.move_down();
+        bitboard.move_down_in_place();
 
         for x in 0..5 {
             for y in 0..5 {
@@ -232,7 +282,7 @@ mod test {
     fn can_move_up() {
         let mut bitboard = bitboard::Bitboard::new(5);
 
-        bitboard.toggle(4, 4);
+        bitboard.turn_on(4, 4);
 
         for x in 0..5 {
             for y in 0..5 {
@@ -249,63 +299,75 @@ mod test {
             bitboard.turn_on(x, 0);
         }
 
-        bitboard.move_up();
+        let not_in_place_bitboard = bitboard.move_up();
+        bitboard.move_up_in_place();
 
         for x in 0..5 {
             for y in 0..5 {
                 if x == 4 && y == 3 {
                     assert!(bitboard.is_on(x, y));
+                    assert!(not_in_place_bitboard.is_on(x, y));
                 }
                 else {
-                    assert!(!bitboard.is_on(x, y));
+                    assert!(!not_in_place_bitboard.is_on(x, y));
                 }
             }
         }
 
-        bitboard.move_up();
+        let not_in_place_bitboard = bitboard.move_up();
+        bitboard.move_up_in_place();
 
         for x in 0..5 {
             for y in 0..5 {
                 if x == 4 && y == 2 {
                     assert!(bitboard.is_on(x, y));
+                    assert!(not_in_place_bitboard.is_on(x, y));
                 }
                 else {
                     assert!(!bitboard.is_on(x, y));
+                    assert!(!not_in_place_bitboard.is_on(x, y));
                 }
             }
         }
 
-        bitboard.move_up();
+        let not_in_place_bitboard = bitboard.move_up();
+        bitboard.move_up_in_place();
 
         for x in 0..5 {
             for y in 0..5 {
                 if x == 4 && y == 1 {
                     assert!(bitboard.is_on(x, y));
+                    assert!(not_in_place_bitboard.is_on(x, y));
                 }
                 else {
                     assert!(!bitboard.is_on(x, y));
+                    assert!(!not_in_place_bitboard.is_on(x, y));
                 }
             }
         }
 
-        bitboard.move_up();
+        let not_in_place_bitboard = bitboard.move_up();
+        bitboard.move_up_in_place();
 
         for x in 0..5 {
             for y in 0..5 {
                 if x == 4 && y == 0 {
                     assert!(bitboard.is_on(x, y));
+                    assert!(not_in_place_bitboard.is_on(x, y));
                 }
                 else {
-                    assert!(!bitboard.is_on(x, y));
+                    assert!(!not_in_place_bitboard.is_on(x, y));
                 }
             }
         }
 
-        bitboard.move_up();
+        let not_in_place_bitboard = bitboard.move_up();
+        bitboard.move_up_in_place();
 
         for x in 0..5 {
             for y in 0..5 {
                 assert!(!bitboard.is_on(x, y));
+                assert!(!not_in_place_bitboard.is_on(x, y));
             }
         }
     }
@@ -325,7 +387,9 @@ mod test {
         other_bitboard.turn_on(2, 1);
         other_bitboard.turn_on(1, 2);
 
-        bitboard.or(&other_bitboard);
+        let not_in_place_bitboard = bitboard.or(&other_bitboard);
+
+        bitboard.or_inplace(&other_bitboard);
 
         let mut expected_bitboard = Bitboard::new(3);
         for x in 0..3 {
@@ -336,6 +400,7 @@ mod test {
         expected_bitboard.turn_off(0, 0);
 
         assert_eq!(bitboard, expected_bitboard);
+        assert_eq!(not_in_place_bitboard, expected_bitboard);
     }
 
     #[test]
@@ -350,10 +415,6 @@ mod test {
 
             for x in 0..width {
                 for y in 0..height {
-                    bitboard.toggle(x, y);
-                    assert!(bitboard.is_on(x, y));
-                    bitboard.toggle(x, y);
-                    assert!(!(bitboard.is_on(x, y)));
                     bitboard.turn_on(x, y);
                     assert!(bitboard.is_on(x, y));
                     bitboard.turn_on(x, y);
@@ -362,8 +423,6 @@ mod test {
                     assert!(!bitboard.is_on(x, y));
                     bitboard.turn_off(x, y);
                     assert!(!bitboard.is_on(x, y));
-                    bitboard.toggle(x, y);
-                    assert!(bitboard.is_on(x, y));
                 }
             }
 
@@ -375,7 +434,7 @@ mod test {
 
             for x in 0..width {
                 for y in 0..height {
-                    bitboard.toggle(x, y);
+                    bitboard.turn_off(x, y);
                     assert!(!bitboard.is_on(x, y));
                     for other_x in 0..width {
                         for other_y in 0..height {
@@ -387,7 +446,7 @@ mod test {
                         }
                     }
 
-                    bitboard.toggle(x, y);
+                    bitboard.turn_on(x, y);
                     assert!(bitboard.is_on(x, y));
                     for other_x in 0..width {
                         for other_y in 0..height {
@@ -450,5 +509,30 @@ mod test {
                 }
             }
         }
+    }
+
+    #[test]
+    fn can_xor_bitboards() {
+        let mut bitboard = Bitboard::new(3);
+        bitboard.turn_on(2, 0);
+        bitboard.turn_on(1, 1);
+        bitboard.turn_on(0, 2);
+        bitboard.turn_on(2, 2);
+
+        let mut other_bitboard = Bitboard::new(3);
+        other_bitboard.turn_on(2, 0);
+        other_bitboard.turn_on(0, 0);
+
+        let not_in_place_bitboard = bitboard.xor(&other_bitboard);
+        bitboard.xor_inplace(&other_bitboard);
+
+        let mut expected_bitboard = Bitboard::new(3);
+        expected_bitboard.turn_on(0, 0);
+        expected_bitboard.turn_on(1, 1);
+        expected_bitboard.turn_on(0, 2);
+        expected_bitboard.turn_on(2, 2);
+
+        assert_eq!(bitboard, expected_bitboard);
+        assert_eq!(not_in_place_bitboard, expected_bitboard);
     }
 }
