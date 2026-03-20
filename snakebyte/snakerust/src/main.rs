@@ -3,7 +3,7 @@ fn main() {
     let mut game_state = snakerust::state::GameState::new(&game_definition);
 
 
-    while true {
+    loop {
         game_state.update_from_buffer(std::io::stdin().lock());
 
         println!("WAIT")

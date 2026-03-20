@@ -1,9 +1,9 @@
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub enum Direction {
-    Down,
-    Left,
-    Right,
-    Up,
+    Down = 0,
+    Left = 1,
+    Right = 2,
+    Up = 3,
 }
 
 impl Direction {

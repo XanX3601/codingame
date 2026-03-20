@@ -1,38 +1,43 @@
 use crate::action;
 use crate::bitboard;
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Copy, Debug)]
 pub struct Snake {
-    body: std::collections::VecDeque<(i32, i32)>,
+    body: [(i16, i16); Snake::BODY_MAX_LEN],
     body_bitboard: bitboard::Bitboard,
     direction: action::Direction,
-    tail_last_position: Option<(i32, i32)>,
+    head_index: u8,
+    tail_index: u8,
 }
 
 impl Snake {
-    pub fn add_body_part(&mut self, x: i32, y: i32) {
-        self.body.push_back((x, y));
-        if x >= 0 && x < self.body_bitboard.get_width() as i32 && y >= 0 {
-            self.body_bitboard.turn_on(x as u32, y as u32);
+    const BODY_MAX_LEN: usize = 256;
+
+    pub fn add_body_part(&mut self, x: i16, y: i16, width: u16, is_in_grid: bool) {
+        self.tail_index = self.tail_index.wrapping_sub(1);
+        self.body[self.tail_index as usize] = (x, y);
+
+        if is_in_grid{
+            self.body_bitboard.turn_on(
+                bitboard::Bitboard::coord_to_index(x as u16, y as u16, width)
+            );
         }
-        self.tail_last_position = None;
     }
 
     pub fn clear(&mut self) {
-        self.body.clear();
+        self.head_index = 0;
+        self.tail_index = 0;
         self.body_bitboard.clear();
-        self.tail_last_position = None;
     }
 
     pub fn does_collide(&self, bitboard: &bitboard::Bitboard) -> bool {
-        return self.body_bitboard.does_collide(&bitboard);
+        self.body_bitboard.does_collide(&bitboard)
     }
 
     pub fn does_head_collide(&self, bitboard: &bitboard::Bitboard) -> bool {
-        let (head_x, head_y) = match self.body.front() {
-            Some(head) => head,
-            None => panic!("attempt to collide an empty snake"),
-        };
+        // assume that snake is alway with at least one body part
+        // as it should be removed from the game it is has 2 or less
+        // assuming that, then head_index must be different than tail_index
 
         *head_x >= 0 && *head_x < self.body_bitboard.get_width() as i32 && *head_y >= 0 && bitboard.is_on(*head_x as u32, *head_y as u32)
     }
@@ -64,7 +69,7 @@ impl Snake {
     }
 
     pub fn len(&self) -> usize {
-        return self.body.len()
+        self.body.len()
     }
 
     pub fn move_body_down(&mut self, step: i32) {
@@ -83,14 +88,14 @@ impl Snake {
     }
 
     pub fn move_same_direction(&mut self) {
-        self.move_toward(self.direction.clone());
+        self.move_toward(self.direction);
     }
 
     pub fn move_toward(&mut self, mut direction: action::Direction) {
         // snake cannot move backward if so, it moves forward in the same
         // direction
         if self.direction.get_backward() == direction {
-            direction = self.direction.clone();
+            direction = self.direction;
         }
 
         // to move a snake, remove its tail and move its head forward in the 

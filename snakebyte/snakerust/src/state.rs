@@ -99,6 +99,10 @@ impl GameDefinition {
             platform_bitboard: platform_bitboard,
         }
     }
+
+    pub fn get_snake_count_per_player(&self) -> usize {
+        self.my_snake_ids.len()
+    }
 }
 
 pub struct GameSimulator {
@@ -328,6 +332,10 @@ pub struct GameState<'a> {
 }
 
 impl<'a> GameState<'a> {
+    pub fn get_game_definition(&self) -> &GameDefinition {
+        self.game_definition
+    }
+
     pub fn new(game_definition: &'a GameDefinition) -> GameState<'a> {
         let mut snake_id_to_snake: std::collections::HashMap<u32, snake::Snake> = std::collections::HashMap::new();
         for snake_id in &game_definition.enemy_snake_ids {
