@@ -1,5 +1,6 @@
 use crate::action;
 use crate::bitboard;
+use crate::zobrist;
 
 #[derive(Clone, Copy, Debug)]
 pub struct Snake {
@@ -8,17 +9,30 @@ pub struct Snake {
     direction: action::Direction,
     head_index: u8,
     tail_index: u8,
+    zobrist_hash: u64,
 }
 
 impl Snake {
     const BODY_MAX_LEN: usize = 256;
 
-    pub fn add_body_part(&mut self, x: i16, y: i16, width: u16, height: u16) {
+    pub fn add_body_part(
+        &mut self,
+        x: i16,
+        y: i16,
+        width: u16,
+        height: u16,
+        zobrist_table: &zobrist::ZobristTable, snake_id: u8
+    ) {
         self.body[self.tail_index as usize] = (x, y);
         self.tail_index = self.tail_index.wrapping_sub(1);
 
         if Self::is_in_grid(x, y, width, height) {
             self.body_bitboard.turn_on(
+                bitboard::Bitboard::coord_to_index(x as u16, y as u16, width)
+            );
+
+            self.zobrist_hash ^= zobrist_table.get_snake_body_hash(
+                snake_id,
                 bitboard::Bitboard::coord_to_index(x as u16, y as u16, width)
             );
         }
@@ -29,6 +43,7 @@ impl Snake {
         self.body_bitboard.clear();
         self.head_index = 0;
         self.tail_index = 0;
+        self.zobrist_hash = 0;
     }
 
     pub fn does_collide(&self, bitboard: &bitboard::Bitboard) -> bool {
@@ -50,11 +65,19 @@ impl Snake {
         self.body[self.head_index as usize]
     }
 
-    pub fn grow(&mut self, width: u16, height: u16) {
+    pub fn get_zobrist_hash(&self) -> u64 {
+        self.zobrist_hash
+    }
+
+    pub fn grow(&mut self, width: u16, height: u16, zobrist_table: &zobrist::ZobristTable, snake_id: u8) {
         let (new_tail_x, new_tail_y) = self.body[self.tail_index as usize];
         self.tail_index = self.tail_index.wrapping_sub(1);
         if Self::is_in_grid(new_tail_x, new_tail_y, width, height) {
             self.body_bitboard.turn_on(
+                bitboard::Bitboard::coord_to_index(new_tail_x as u16, new_tail_y as u16, width)
+            );
+            self.zobrist_hash ^= zobrist_table.get_snake_body_hash(
+                snake_id,
                 bitboard::Bitboard::coord_to_index(new_tail_x as u16, new_tail_y as u16, width)
             );
         }
@@ -68,10 +91,26 @@ impl Snake {
         (self.head_index.wrapping_sub(self.tail_index)) as usize
     }
 
-    pub fn move_body_down(&mut self, step: i16) {
+    pub fn move_body_down(&mut self, step: i16, width: u16, height: u16, zobrist_table: &zobrist::ZobristTable, snake_id: u8) {
         let mut body_index = self.tail_index.wrapping_add(1);
         while body_index != self.head_index.wrapping_add(1) {
-            self.body[body_index as usize].1 += step;
+            let (body_x, body_y) = self.body[body_index as usize];
+            if Snake::is_in_grid(body_x, body_y, width, height) {
+                self.zobrist_hash ^= zobrist_table.get_snake_body_hash(
+                    snake_id, 
+                    bitboard::Bitboard::coord_to_index(body_x as u16, body_y as u16, width)
+                );
+            }
+
+            let (body_x, body_y) = (body_x, body_y + step);
+            if Snake::is_in_grid(body_x, body_y, width, height) {
+                self.zobrist_hash ^= zobrist_table.get_snake_body_hash(
+                    snake_id, 
+                    bitboard::Bitboard::coord_to_index(body_x as u16, body_y as u16, width)
+                );
+            }
+
+            self.body[body_index as usize] = (body_x, body_y);
             body_index = body_index.wrapping_add(1);
         }
     }
@@ -80,11 +119,11 @@ impl Snake {
         self.body_bitboard.move_down_in_place(width);
     }
 
-    pub fn move_same_direction(&mut self, width: u16, height: u16) {
-        self.move_toward(self.direction, width, height);
+    pub fn move_same_direction(&mut self, width: u16, height: u16, zobrist_table: &zobrist::ZobristTable, snake_id: u8) {
+        self.move_toward(self.direction, width, height, &zobrist_table, snake_id);
     }
 
-    pub fn move_toward(&mut self, mut direction: action::Direction, width: u16, height: u16) {
+    pub fn move_toward(&mut self, mut direction: action::Direction, width: u16, height: u16, zobrist_table: &zobrist::ZobristTable, snake_id: u8) {
         // snake cannot move backward if so, it moves forward in the same
         // direction
         if self.direction.get_backward() == direction {
@@ -99,6 +138,10 @@ impl Snake {
             self.body_bitboard.turn_off(
                 bitboard::Bitboard::coord_to_index(tail_x as u16, tail_y as u16, width)
             );
+            self.zobrist_hash ^= zobrist_table.get_snake_body_hash(
+                snake_id, 
+                bitboard::Bitboard::coord_to_index(tail_x as u16, tail_y as u16, width)
+            );
         }
 
         let (head_x, head_y) = self.body[self.head_index as usize];
@@ -107,6 +150,10 @@ impl Snake {
         self.body[self.head_index as usize] = (new_head_x, new_head_y);
         if Self::is_in_grid(new_head_x, new_head_y, width, height) {
             self.body_bitboard.turn_on(
+                bitboard::Bitboard::coord_to_index(new_head_x as u16, new_head_y as u16, width)
+            );
+            self.zobrist_hash ^= zobrist_table.get_snake_body_hash(
+                snake_id, 
                 bitboard::Bitboard::coord_to_index(new_head_x as u16, new_head_y as u16, width)
             );
         }
@@ -119,16 +166,21 @@ impl Snake {
             body_bitboard: bitboard::Bitboard::new(),
             direction: action::Direction::Up,
             head_index: 0,
-            tail_index: 0
+            tail_index: 0,
+            zobrist_hash: 0,
         }
     }
 
-    pub fn remove_head(&mut self, width: u16, height: u16) {
+    pub fn remove_head(&mut self, width: u16, height: u16, zobrist_table: &zobrist::ZobristTable, snake_id: u8) {
         let (previous_head_x, previous_head_y) = self.body[self.head_index as usize];
         self.head_index = self.head_index.wrapping_sub(1);
 
         if Self::is_in_grid(previous_head_x, previous_head_y, width, height) {
             self.body_bitboard.turn_off(
+                bitboard::Bitboard::coord_to_index(previous_head_x as u16, previous_head_y as u16, width)
+            );
+            self.zobrist_hash ^= zobrist_table.get_snake_body_hash(
+                snake_id, 
                 bitboard::Bitboard::coord_to_index(previous_head_x as u16, previous_head_y as u16, width)
             );
         }
@@ -173,7 +225,8 @@ impl PartialEq for Snake {
             other_body_index = other_body_index.wrapping_add(1);
         }
 
-        self.body_bitboard == other.body_bitboard
+        self.zobrist_hash == other.zobrist_hash
+            && self.body_bitboard == other.body_bitboard
     }
 }
 
@@ -202,15 +255,18 @@ mod test {
     
     #[test]
     fn can_add_body_parts() {
+        let zobrist_table = zobrist::ZobristTable::new();
+        let snake_id = 0;
+
         let mut rng = rand::rng();
         let width: u16 = rng.random_range(15..46);
         let height: u16 = rng.random_range(10..31);
 
         let mut snake = Snake::new();
-        snake.add_body_part(0, 0, width, height);
-        snake.add_body_part(0, 1, width, height);
-        snake.add_body_part(1, 1, width, height);
-        snake.add_body_part(1, 0, width, height);
+        snake.add_body_part(0, 0, width, height, &zobrist_table, snake_id);
+        snake.add_body_part(0, 1, width, height, &zobrist_table, snake_id);
+        snake.add_body_part(1, 1, width, height, &zobrist_table, snake_id);
+        snake.add_body_part(1, 0, width, height, &zobrist_table, snake_id);
 
         assert_eq!(snake.len(), 4);
 
@@ -233,15 +289,18 @@ mod test {
 
     #[test]
     fn can_clear_snake() {
+        let zobrist_table = zobrist::ZobristTable::new();
+        let snake_id = 0;
+
         let mut rng = rand::rng();
         let width: u16 = rng.random_range(15..46);
         let height: u16 = rng.random_range(10..31);
 
         let mut snake = Snake::new();
-        snake.add_body_part(0, 0, width, height);
-        snake.add_body_part(0, 1, width, height);
-        snake.add_body_part(1, 1, width, height);
-        snake.add_body_part(1, 0, width, height);
+        snake.add_body_part(0, 0, width, height, &zobrist_table, snake_id);
+        snake.add_body_part(0, 1, width, height, &zobrist_table, snake_id);
+        snake.add_body_part(1, 1, width, height, &zobrist_table, snake_id);
+        snake.add_body_part(1, 0, width, height, &zobrist_table, snake_id);
 
         assert_eq!(snake.len(), 4);
 
@@ -261,12 +320,15 @@ mod test {
 
     #[test]
     fn can_collide() {
+        let zobrist_table = zobrist::ZobristTable::new();
+        let snake_id = 0;
+
         let width = 3;
         let height = width;
 
         let mut snake = Snake::new();
-        snake.add_body_part(1, 1, width, height);
-        snake.add_body_part(0, 1, width, height);
+        snake.add_body_part(1, 1, width, height, &zobrist_table, snake_id);
+        snake.add_body_part(0, 1, width, height, &zobrist_table, snake_id);
 
         let mut bitboard = bitboard::Bitboard::new();
 
@@ -294,15 +356,18 @@ mod test {
 
     #[test]
     fn can_grow() {
+        let zobrist_table = zobrist::ZobristTable::new();
+        let snake_id = 0;
+
         let width = 6;
         let height = width;
 
         let mut snake = Snake::new();
-        snake.add_body_part(1, 2, width, height);
-        snake.add_body_part(1, 3, width, height);
-        snake.add_body_part(1, 4, width, height);
+        snake.add_body_part(1, 2, width, height, &zobrist_table, snake_id);
+        snake.add_body_part(1, 3, width, height, &zobrist_table, snake_id);
+        snake.add_body_part(1, 4, width, height, &zobrist_table, snake_id);
 
-        snake.grow(width, height);
+        snake.grow(width, height, &zobrist_table, snake_id);
 
         let mut expected_body = Vec::new();
         expected_body.push((1, 2));
@@ -313,13 +378,13 @@ mod test {
 
         assert!(check_body(&snake, &expected_body));
 
-        snake.move_toward(action::Direction::Right, width, height);
-        snake.move_toward(action::Direction::Right, width, height);
-        snake.move_toward(action::Direction::Right, width, height);
-        snake.move_toward(action::Direction::Right, width, height);
-        snake.move_toward(action::Direction::Up, width, height);
+        snake.move_toward(action::Direction::Right, width, height, &zobrist_table, snake_id);
+        snake.move_toward(action::Direction::Right, width, height, &zobrist_table, snake_id);
+        snake.move_toward(action::Direction::Right, width, height, &zobrist_table, snake_id);
+        snake.move_toward(action::Direction::Right, width, height, &zobrist_table, snake_id);
+        snake.move_toward(action::Direction::Up, width, height, &zobrist_table, snake_id);
 
-        snake.grow(width, height);
+        snake.grow(width, height, &zobrist_table, snake_id);
 
         let mut expected_body = Vec::new();
         expected_body.push((5, 1));
@@ -334,12 +399,15 @@ mod test {
 
     #[test]
     fn can_head_collide() {
+        let zobrist_table = zobrist::ZobristTable::new();
+        let snake_id = 0;
+
         let width = 3;
         let height = width;
 
         let mut snake = Snake::new();
-        snake.add_body_part(1, 1, width, height);
-        snake.add_body_part(0, 1, width, height);
+        snake.add_body_part(1, 1, width, height, &zobrist_table, snake_id);
+        snake.add_body_part(0, 1, width, height, &zobrist_table, snake_id);
 
         let mut bitboard = bitboard::Bitboard::new();
 
@@ -362,14 +430,17 @@ mod test {
 
     #[test]
     fn can_move_hitbox_and_body_down() {
+        let zobrist_table = zobrist::ZobristTable::new();
+        let snake_id = 0;
+
         let width = 5;
         let height = width;
 
         let mut snake = Snake::new();
 
-        snake.add_body_part(2, 2, width, height);
-        snake.add_body_part(2, 1, width, height);
-        snake.add_body_part(1, 1, width, height);
+        snake.add_body_part(2, 2, width, height, &zobrist_table, snake_id);
+        snake.add_body_part(2, 1, width, height, &zobrist_table, snake_id);
+        snake.add_body_part(1, 1, width, height, &zobrist_table, snake_id);
 
         let mut expected_body = Vec::new();
         expected_body.push((2, 2));
@@ -405,7 +476,7 @@ mod test {
         assert!(check_body(&snake, &expected_body));
         assert_eq!(snake.body_bitboard, expected_body_bitboard);
 
-        snake.move_body_down(2);
+        snake.move_body_down(2, width, height, &zobrist_table, snake_id);
 
         let mut expected_body = Vec::new();
         expected_body.push((2, 4));
@@ -419,18 +490,21 @@ mod test {
 
     #[test]
     fn can_move_toward() {
+        let zobrist_table = zobrist::ZobristTable::new();
+        let snake_id = 0;
+
         let mut rng = rand::rng();
         let width: u16 = rng.random_range(15..46);
         let height: u16 = rng.random_range(10..31);
 
         let mut snake = Snake::new();
-        snake.add_body_part(1, 1, width, height);
-        snake.add_body_part(1, 2, width, height);
-        snake.add_body_part(2, 2, width, height);
-        snake.add_body_part(3, 2, width, height);
-        snake.add_body_part(3, 3, width, height);
+        snake.add_body_part(1, 1, width, height, &zobrist_table, snake_id);
+        snake.add_body_part(1, 2, width, height, &zobrist_table, snake_id);
+        snake.add_body_part(2, 2, width, height, &zobrist_table, snake_id);
+        snake.add_body_part(3, 2, width, height, &zobrist_table, snake_id);
+        snake.add_body_part(3, 3, width, height, &zobrist_table, snake_id);
 
-        snake.move_toward(action::Direction::Left, width, height);
+        snake.move_toward(action::Direction::Left, width, height, &zobrist_table, snake_id);
 
         let mut expected_body = Vec::new();
         expected_body.push((0, 1));
@@ -451,7 +525,7 @@ mod test {
         assert_eq!(snake.body_bitboard, expected_body_bitboard);
         assert_eq!(snake.direction, action::Direction::Left);
 
-        snake.move_toward(action::Direction::Right, width, height);
+        snake.move_toward(action::Direction::Right, width, height, &zobrist_table, snake_id);
 
         let mut expected_body = Vec::new();
         expected_body.push((-1, 1));
@@ -471,7 +545,7 @@ mod test {
         assert_eq!(snake.body_bitboard, expected_body_bitboard);
         assert_eq!(snake.direction, action::Direction::Left);
 
-        snake.move_toward(action::Direction::Up, width, height);
+        snake.move_toward(action::Direction::Up, width, height, &zobrist_table, snake_id);
 
         let mut expected_body = Vec::new();
         expected_body.push((-1, 0));
@@ -490,7 +564,7 @@ mod test {
         assert_eq!(snake.body_bitboard, expected_body_bitboard);
         assert_eq!(snake.direction, action::Direction::Up);
 
-        snake.move_toward(action::Direction::Right, width, height);
+        snake.move_toward(action::Direction::Right, width, height, &zobrist_table, snake_id);
 
         let mut expected_body = Vec::new();
         expected_body.push((0, 0));
@@ -509,7 +583,7 @@ mod test {
         assert_eq!(snake.body_bitboard, expected_body_bitboard);
         assert_eq!(snake.direction, action::Direction::Right);
 
-        snake.move_toward(action::Direction::Down, width, height);
+        snake.move_toward(action::Direction::Down, width, height, &zobrist_table, snake_id);
 
         let mut expected_body = Vec::new();
         expected_body.push((0, 1));
@@ -530,16 +604,19 @@ mod test {
 
     #[test]
     fn can_move_outside() {
+        let zobrist_table = zobrist::ZobristTable::new();
+        let snake_id = 0;
+
         let width = 18;
         let height = width;
 
         let mut snake = Snake::new();
-        snake.add_body_part(17, 1, width, height);
-        snake.add_body_part(16, 1, width, height);
-        snake.add_body_part(15, 1, width, height);
-        snake.add_body_part(15, 2, width, height);
+        snake.add_body_part(17, 1, width, height, &zobrist_table, snake_id);
+        snake.add_body_part(16, 1, width, height, &zobrist_table, snake_id);
+        snake.add_body_part(15, 1, width, height, &zobrist_table, snake_id);
+        snake.add_body_part(15, 2, width, height, &zobrist_table, snake_id);
 
-        snake.move_toward(action::Direction::Right, width, height);
+        snake.move_toward(action::Direction::Right, width, height, &zobrist_table, snake_id);
 
         let mut expected_body_parts = Vec::new();
         expected_body_parts.push((18, 1));
@@ -559,15 +636,18 @@ mod test {
 
     #[test]
     fn can_remove_head() {
+        let zobrist_table = zobrist::ZobristTable::new();
+        let snake_id = 0;
+
         let width = 10;
         let height = width;
 
         let mut snake = Snake::new();
-        snake.add_body_part(-1, -1, width, height);
-        snake.add_body_part(0, -1, width, height);
-        snake.add_body_part(0, 0, width, height);
-        snake.add_body_part(1, 0, width, height);
-        snake.add_body_part(1, 1, width, height);
+        snake.add_body_part(-1, -1, width, height, &zobrist_table, snake_id);
+        snake.add_body_part(0, -1, width, height, &zobrist_table, snake_id);
+        snake.add_body_part(0, 0, width, height, &zobrist_table, snake_id);
+        snake.add_body_part(1, 0, width, height, &zobrist_table, snake_id);
+        snake.add_body_part(1, 1, width, height, &zobrist_table, snake_id);
 
         let mut expected_body = Vec::new();
         expected_body.push((-1, -1));
@@ -585,7 +665,7 @@ mod test {
         assert!(check_body(&snake, &expected_body));
         assert_eq!(snake.body_bitboard, expected_body_bitboard);
 
-        snake.remove_head(width, height);
+        snake.remove_head(width, height, &zobrist_table, snake_id);
 
         let mut expected_body = Vec::new();
         expected_body.push((0, -1));
@@ -597,7 +677,7 @@ mod test {
         assert!(check_body(&snake, &expected_body));
         assert_eq!(snake.body_bitboard, expected_body_bitboard);
 
-        snake.remove_head(width, height);
+        snake.remove_head(width, height, &zobrist_table, snake_id);
 
         let mut expected_body = Vec::new();
         expected_body.push((0, 0));
@@ -608,7 +688,7 @@ mod test {
         assert!(check_body(&snake, &expected_body));
         assert_eq!(snake.body_bitboard, expected_body_bitboard);
 
-        snake.remove_head(width, height);
+        snake.remove_head(width, height, &zobrist_table, snake_id);
 
         let mut expected_body = Vec::new();
         expected_body.push((1, 0));

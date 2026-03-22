@@ -1,6 +1,7 @@
 use crate::action;
 use crate::bitboard;
 use crate::snake;
+use crate::zobrist;
 
 #[derive(Debug, PartialEq)]
 pub struct GameDefinition {
@@ -120,9 +121,11 @@ impl GameSimulator {
         &mut self,
         game_state: &GameState,
         actions: [Option<action::Direction>; GameState::MAX_SNAKE_COUNT],
-        game_definition: &GameDefinition
+        game_definition: &GameDefinition,
+        zobrist_table: &zobrist::ZobristTable,
     ) -> GameState {
         let mut next_game_state = game_state.clone();
+        next_game_state.zobrist_hash = 0;
 
         // collision = platform + other snakes
         self.collision_bitboard = game_definition.platform_bitboard;
@@ -136,8 +139,8 @@ impl GameSimulator {
             if let Some(snake) = next_game_state.snakes[snake_id].as_mut() {
 
                 match actions[snake_id] {
-                    Some(direction) => snake.move_toward(direction, game_definition.grid_width, game_definition.grid_height),
-                    _ => snake.move_same_direction(game_definition.grid_width, game_definition.grid_height),
+                    Some(direction) => snake.move_toward(direction, game_definition.grid_width, game_definition.grid_height, &zobrist_table, snake_id as u8),
+                    _ => snake.move_same_direction(game_definition.grid_width, game_definition.grid_height, &zobrist_table, snake_id as u8),
                 }
 
                 // add the entire snake as collision, head not included
@@ -182,7 +185,7 @@ impl GameSimulator {
 
                     // grow the snake and add its new body part to collision and
                     // gravity
-                    snake.grow(game_definition.grid_width, game_definition.grid_height);
+                    snake.grow(game_definition.grid_width, game_definition.grid_height, &zobrist_table, snake_id as u8);
                     snake.with_headless_body_bitboard(
                         game_definition.grid_width,
                         game_definition.grid_height,
@@ -198,7 +201,7 @@ impl GameSimulator {
                     game_definition.grid_width,
                     game_definition.grid_height
                 ) {
-                    snake.remove_head(game_definition.grid_width, game_definition.grid_height);
+                    snake.remove_head(game_definition.grid_width, game_definition.grid_height, &zobrist_table, snake_id as u8);
                     // if snake is too small, kill it, it may not be perfect
                     if snake.len() < 3 {
                         next_game_state.snakes[snake_id] = None;
@@ -223,11 +226,13 @@ impl GameSimulator {
 
                 // once we know how much the snake has to go down, move its body down
                 if step > 0 {
-                    snake.move_body_down(step);
+                    snake.move_body_down(step, game_definition.grid_width, game_definition.grid_height, &zobrist_table, snake_id as u8);
                 }
 
                 // add the snake body back to gravity
                 self.gravity_bitboard.or_inplace(snake.get_body_bitboard());
+
+                next_game_state.zobrist_hash ^= snake.get_zobrist_hash();
             }
         }
 
@@ -236,7 +241,14 @@ impl GameSimulator {
 
         // let's remove the power sources
         self.power_sources_to_remove.iter()
-            .for_each(|&bit_index| next_game_state.power_source_bitboard.turn_off(bit_index));
+            .for_each(
+                |&bit_index| {
+                    next_game_state.power_source_bitboard.turn_off(bit_index);
+                    next_game_state.power_source_zobrist_hash ^= zobrist_table.get_pwoer_source_hash(bit_index);
+                }
+            );
+
+        next_game_state.zobrist_hash ^= next_game_state.power_source_zobrist_hash;
 
         next_game_state
     }
@@ -253,7 +265,9 @@ impl GameSimulator {
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct GameState {
     power_source_bitboard: bitboard::Bitboard,
+    power_source_zobrist_hash: u64,
     snakes: [Option<snake::Snake>; Self::MAX_SNAKE_COUNT],
+    zobrist_hash: u64,
 }
 
 impl GameState {
@@ -262,12 +276,15 @@ impl GameState {
     pub fn new() -> Self {
         GameState {
             power_source_bitboard: bitboard::Bitboard::new(),
+            power_source_zobrist_hash: 0,
             snakes: [None; Self::MAX_SNAKE_COUNT],
+            zobrist_hash: 0,
         }
     }
 
-    pub fn update_from_buffer<R: std::io::BufRead>(&mut self, mut reader: R, width: u16, height: u16) {
+    pub fn update_from_buffer<R: std::io::BufRead>(&mut self, mut reader: R, width: u16, height: u16, zobrist_table: &zobrist::ZobristTable) {
         self.power_source_bitboard.clear();
+        self.power_source_zobrist_hash = 0;
 
         let mut input_line = String::new();
         reader.read_line(&mut input_line).unwrap();
@@ -283,14 +300,16 @@ impl GameState {
                 .trim()
                 .split_whitespace()
                 .into_iter();
-            self.power_source_bitboard.turn_on(
-                bitboard::Bitboard::coord_to_index(
-                    power_source_coord_iter.next().unwrap().parse::<u16>().unwrap(),
-                    power_source_coord_iter.next().unwrap().parse::<u16>().unwrap(),
-                    width
-                )
+            let power_source_index = bitboard::Bitboard::coord_to_index(
+                power_source_coord_iter.next().unwrap().parse::<u16>().unwrap(), 
+                power_source_coord_iter.next().unwrap().parse::<u16>().unwrap(), 
+                width
             );
+            self.power_source_bitboard.turn_on(power_source_index);
+            self.power_source_zobrist_hash ^= zobrist_table.get_pwoer_source_hash(power_source_index);
         }
+
+        self.zobrist_hash = self.power_source_zobrist_hash;
 
         let mut input_line = String::new();
         reader.read_line(&mut input_line).unwrap();
@@ -328,9 +347,11 @@ impl GameState {
                             .unwrap()
                             .parse::<i16>()
                             .unwrap();
-                        snake.add_body_part(x, y, width, height);
+                        snake.add_body_part(x, y, width, height, &zobrist_table, snake_id);
                     }
-                )
+                );
+
+            self.zobrist_hash ^= snake.get_zobrist_hash();
         }
 
         for snake_id in 0..Self::MAX_SNAKE_COUNT {
@@ -347,6 +368,8 @@ mod test {
     // use pretty_assertions::assert_eq;
 
     #[test] fn can_apply_actions() {
+        let zobrist_table = zobrist::ZobristTable::new();
+
         let input = r#"0
             18
             10
@@ -406,7 +429,8 @@ mod test {
         game_state.update_from_buffer(
             reader,
             game_definition.grid_width,
-            game_definition.grid_height
+            game_definition.grid_height,
+            &zobrist_table
         );
 
         let mut simulator = GameSimulator::new();
@@ -417,7 +441,7 @@ mod test {
         actions[1] = Some(action::Direction::Right);
         actions[2] = Some(action::Direction::Right);
         actions[3] = Some(action::Direction::Left);
-        let game_state = simulator.apply(&game_state, actions, &game_definition);
+        let game_state = simulator.apply(&game_state, actions, &game_definition, &zobrist_table);
 
         let input = r#"18
             0 2
@@ -449,11 +473,12 @@ mod test {
         expected_game_state.update_from_buffer(
             reader,
             game_definition.grid_width,
-            game_definition.grid_height
+            game_definition.grid_height,
+            &zobrist_table
         );
 
         for snake_id in 0..16 {
-            assert_eq!(game_state.snakes[snake_id], expected_game_state.snakes[snake_id]);
+            assert_eq!(game_state.snakes[snake_id], expected_game_state.snakes[snake_id])
         }
 
         assert_eq!(game_state, expected_game_state);
@@ -461,7 +486,7 @@ mod test {
         actions[1] = Some(action::Direction::Right);
         actions[2] = Some(action::Direction::Up);
         actions[3] = Some(action::Direction::Left);
-        let game_state = simulator.apply(&game_state, actions, &game_definition);
+        let game_state = simulator.apply(&game_state, actions, &game_definition, &zobrist_table);
 
         let input = r#"16
             0 2
@@ -491,7 +516,8 @@ mod test {
         expected_game_state.update_from_buffer(
             reader,
             game_definition.grid_width,
-            game_definition.grid_height
+            game_definition.grid_height,
+            &zobrist_table,
         );
 
         assert_eq!(game_state, expected_game_state);
@@ -499,7 +525,7 @@ mod test {
         actions[1] = Some(action::Direction::Right);
         actions[2] = Some(action::Direction::Up);
         actions[3] = Some(action::Direction::Down);
-        let game_state = simulator.apply(&game_state, actions, &game_definition);
+        let game_state = simulator.apply(&game_state, actions, &game_definition, &zobrist_table);
 
         let input = r#"15
             17 2
@@ -528,7 +554,8 @@ mod test {
         expected_game_state.update_from_buffer(
             reader,
             game_definition.grid_width,
-            game_definition.grid_height
+            game_definition.grid_height,
+            &zobrist_table,
         );
 
         assert_eq!(game_state, expected_game_state);
@@ -536,7 +563,7 @@ mod test {
         actions[1] = Some(action::Direction::Right);
         actions[2] = Some(action::Direction::Up);
         actions[3] = Some(action::Direction::Down);
-        let game_state = simulator.apply(&game_state, actions, &game_definition);
+        let game_state = simulator.apply(&game_state, actions, &game_definition, &zobrist_table);
 
         let input = r#"15
             17 2
@@ -565,7 +592,8 @@ mod test {
         expected_game_state.update_from_buffer(
             reader,
             game_definition.grid_width,
-            game_definition.grid_height
+            game_definition.grid_height,
+            &zobrist_table,
         );
 
         assert_eq!(game_state, expected_game_state);
@@ -573,7 +601,7 @@ mod test {
         actions[1] = Some(action::Direction::Right);
         actions[2] = Some(action::Direction::Up);
         actions[3] = Some(action::Direction::Down);
-        let game_state = simulator.apply(&game_state, actions, &game_definition);
+        let game_state = simulator.apply(&game_state, actions, &game_definition, &zobrist_table);
 
         let input = r#"14
             17 2
@@ -601,7 +629,8 @@ mod test {
         expected_game_state.update_from_buffer(
             reader,
             game_definition.grid_width,
-            game_definition.grid_height
+            game_definition.grid_height,
+            &zobrist_table,
         );
 
         assert_eq!(game_state, expected_game_state);
@@ -609,7 +638,7 @@ mod test {
         actions[1] = Some(action::Direction::Right);
         actions[2] = Some(action::Direction::Up);
         actions[3] = Some(action::Direction::Down);
-        let game_state = simulator.apply(&game_state, actions, &game_definition);
+        let game_state = simulator.apply(&game_state, actions, &game_definition, &zobrist_table);
 
         let input = r#"14
             17 2
@@ -636,15 +665,21 @@ mod test {
         expected_game_state.update_from_buffer(
             reader,
             game_definition.grid_width,
-            game_definition.grid_height
+            game_definition.grid_height,
+            &zobrist_table,
         );
+
+        for snake_id in 0..16 {
+            println!("{snake_id}");
+            assert_eq!(game_state.snakes[snake_id], expected_game_state.snakes[snake_id])
+        }
 
         assert_eq!(game_state, expected_game_state);
 
         actions[1] = Some(action::Direction::Right);
         actions[2] = Some(action::Direction::Up);
         actions[3] = Some(action::Direction::Down);
-        let game_state = simulator.apply(&game_state, actions, &game_definition);
+        let game_state = simulator.apply(&game_state, actions, &game_definition, &zobrist_table);
 
         let input = r#"13
             17 2
@@ -670,14 +705,15 @@ mod test {
         expected_game_state.update_from_buffer(
             reader,
             game_definition.grid_width,
-            game_definition.grid_height
+            game_definition.grid_height,
+            &zobrist_table,
         );
 
         assert_eq!(game_state, expected_game_state);
 
         actions[1] = Some(action::Direction::Right);
         actions[2] = Some(action::Direction::Up);
-        let game_state = simulator.apply(&game_state, actions, &game_definition);
+        let game_state = simulator.apply(&game_state, actions, &game_definition, &zobrist_table);
 
         let input = r#"13
             17 2
@@ -703,14 +739,15 @@ mod test {
         expected_game_state.update_from_buffer(
             reader,
             game_definition.grid_width,
-            game_definition.grid_height
+            game_definition.grid_height,
+            &zobrist_table,
         );
 
         assert_eq!(game_state, expected_game_state);
 
         actions[1] = Some(action::Direction::Right);
         actions[2] = Some(action::Direction::Up);
-        let game_state = simulator.apply(&game_state, actions, &game_definition);
+        let game_state = simulator.apply(&game_state, actions, &game_definition, &zobrist_table);
 
         let input = r#"13
             17 2
@@ -736,14 +773,15 @@ mod test {
         expected_game_state.update_from_buffer(
             reader,
             game_definition.grid_width,
-            game_definition.grid_height
+            game_definition.grid_height,
+            &zobrist_table,
         );
 
         assert_eq!(game_state, expected_game_state);
 
         actions[1] = Some(action::Direction::Right);
         actions[2] = Some(action::Direction::Up);
-        let game_state = simulator.apply(&game_state, actions, &game_definition);
+        let game_state = simulator.apply(&game_state, actions, &game_definition, &zobrist_table);
 
         let input = r#"13
             17 2
@@ -769,14 +807,15 @@ mod test {
         expected_game_state.update_from_buffer(
             reader,
             game_definition.grid_width,
-            game_definition.grid_height
+            game_definition.grid_height,
+            &zobrist_table,
         );
 
         assert_eq!(game_state, expected_game_state);
 
         actions[1] = Some(action::Direction::Right);
         actions[2] = Some(action::Direction::Up);
-        let game_state = simulator.apply(&game_state, actions, &game_definition);
+        let game_state = simulator.apply(&game_state, actions, &game_definition, &zobrist_table);
 
         let input = r#"13
             17 2
@@ -802,14 +841,15 @@ mod test {
         expected_game_state.update_from_buffer(
             reader,
             game_definition.grid_width,
-            game_definition.grid_height
+            game_definition.grid_height,
+            &zobrist_table,
         );
 
         assert_eq!(game_state, expected_game_state);
 
         actions[1] = Some(action::Direction::Right);
         actions[2] = Some(action::Direction::Up);
-        let game_state = simulator.apply(&game_state, actions, &game_definition);
+        let game_state = simulator.apply(&game_state, actions, &game_definition, &zobrist_table);
 
         let input = r#"13
             17 2
@@ -834,14 +874,15 @@ mod test {
         expected_game_state.update_from_buffer(
             reader,
             game_definition.grid_width,
-            game_definition.grid_height
+            game_definition.grid_height,
+            &zobrist_table,
         );
 
         assert_eq!(game_state, expected_game_state);
 
         actions[1] = Some(action::Direction::Right);
         actions[2] = Some(action::Direction::Up);
-        let game_state = simulator.apply(&game_state, actions, &game_definition);
+        let game_state = simulator.apply(&game_state, actions, &game_definition, &zobrist_table);
 
         let input = r#"13
             17 2
@@ -866,7 +907,8 @@ mod test {
         expected_game_state.update_from_buffer(
             reader,
             game_definition.grid_width,
-            game_definition.grid_height
+            game_definition.grid_height,
+            &zobrist_table,
         );
 
         assert_eq!(game_state, expected_game_state);
@@ -999,6 +1041,8 @@ mod test {
 
     #[test]
     fn can_update_game_state_from_buffer() {
+        let zobrist_table = zobrist::ZobristTable::new();
+
         let width = 26;
         let height = 14;
 
@@ -1020,7 +1064,7 @@ mod test {
         let cursor = std::io::Cursor::new(input.as_bytes());
         let reader = std::io::BufReader::new(cursor);
 
-        game_state.update_from_buffer(reader, width, height);
+        game_state.update_from_buffer(reader, width, height, &zobrist_table);
 
         let mut expected_power_source_bitboard = bitboard::Bitboard::new();
         expected_power_source_bitboard.turn_on(bitboard::Bitboard::coord_to_index(0, 0, width));
@@ -1032,30 +1076,30 @@ mod test {
 
         let mut expected_snakes = [None; GameState::MAX_SNAKE_COUNT];
         let mut snake = snake::Snake::new();
-        snake.add_body_part(0, 0, width, height);
-        snake.add_body_part(1, 0, width, height);
-        snake.add_body_part(1, 1, width, height);
+        snake.add_body_part(0, 0, width, height, &zobrist_table, 4);
+        snake.add_body_part(1, 0, width, height, &zobrist_table, 4);
+        snake.add_body_part(1, 1, width, height, &zobrist_table, 4);
         expected_snakes[4] = Some(snake);
 
         let mut snake = snake::Snake::new();
-        snake.add_body_part(20, 10, width, height);
-        snake.add_body_part(19, 10, width, height);
-        snake.add_body_part(19, 9, width, height);
-        snake.add_body_part(19, 8, width, height);
+        snake.add_body_part(20, 10, width, height, &zobrist_table, 1);
+        snake.add_body_part(19, 10, width, height, &zobrist_table, 1);
+        snake.add_body_part(19, 9, width, height, &zobrist_table, 1);
+        snake.add_body_part(19, 8, width, height, &zobrist_table, 1);
         expected_snakes[1] = Some(snake);
 
         let mut snake = snake::Snake::new();
-        snake.add_body_part(10, 10, width, height);
-        snake.add_body_part(11, 10, width, height);
-        snake.add_body_part(12, 10, width, height);
-        snake.add_body_part(13, 10, width, height);
+        snake.add_body_part(10, 10, width, height, &zobrist_table, 3);
+        snake.add_body_part(11, 10, width, height, &zobrist_table, 3);
+        snake.add_body_part(12, 10, width, height, &zobrist_table, 3);
+        snake.add_body_part(13, 10, width, height, &zobrist_table, 3);
         expected_snakes[3] = Some(snake);
 
         let mut snake = snake::Snake::new();
-        snake.add_body_part(5, 5, width, height);
-        snake.add_body_part(6, 5, width, height);
-        snake.add_body_part(7, 5, width, height);
-        snake.add_body_part(8, 5, width, height);
+        snake.add_body_part(5, 5, width, height, &zobrist_table, 0);
+        snake.add_body_part(6, 5, width, height, &zobrist_table, 0);
+        snake.add_body_part(7, 5, width, height, &zobrist_table, 0);
+        snake.add_body_part(8, 5, width, height, &zobrist_table, 0);
         expected_snakes[0] = Some(snake);
 
         assert_eq!(game_state.snakes, expected_snakes);
