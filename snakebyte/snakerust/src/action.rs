@@ -7,7 +7,7 @@ pub enum Direction {
 }
 
 impl Direction {
-    pub fn apply(&self, x:i32, y:i32) -> (i32, i32) {
+    pub fn apply(&self, x:i16, y:i16) -> (i16, i16) {
         match self {
             Direction::Down => (x, y + 1),
             Direction::Left => (x - 1, y),

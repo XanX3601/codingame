@@ -4,12 +4,11 @@ use crate::snake;
 
 #[derive(Debug, PartialEq)]
 pub struct GameDefinition {
-    enemy_snake_ids: std::collections::HashSet<u32>,
-    my_id: u32,
-    my_snake_ids: std::collections::HashSet<u32>,
-    gravity_bitboard: bitboard::Bitboard,
-    grid_height: u32,
-    grid_width: u32,
+    enemy_snake_ids: std::collections::HashSet<u8>,
+    my_id: u8,
+    my_snake_ids: std::collections::HashSet<u8>,
+    grid_height: u16,
+    grid_width: u16,
     platform_bitboard: bitboard::Bitboard,
 }
 
@@ -19,25 +18,24 @@ impl GameDefinition {
         reader.read_line(&mut input_line).unwrap();
         let my_id = input_line
             .trim()
-            .parse::<u32>()
+            .parse::<u8>()
             .unwrap();
 
         let mut input_line = String::new();
         reader.read_line(&mut input_line).unwrap();
         let grid_width = input_line
             .trim()
-            .parse::<u32>()
+            .parse::<u16>()
             .unwrap();
 
         let mut input_line = String::new();
         reader.read_line(&mut input_line).unwrap();
         let grid_height = input_line
             .trim()
-            .parse::<u32>()
+            .parse::<u16>()
             .unwrap();
 
-        let mut platform_bitboard = bitboard::Bitboard::new(grid_width);
-        let mut gravity_bitboard = bitboard::Bitboard::new(grid_width);
+        let mut platform_bitboard = bitboard::Bitboard::new();
         for y in 0..grid_height {
             let mut input_line = String::new();
             reader.read_line(&mut input_line).unwrap();
@@ -50,8 +48,7 @@ impl GameDefinition {
                     match c {
                         '.' => (),
                         '#' => {
-                            platform_bitboard.turn_on(x as u32, y);
-                            if y - 1 >= 0 {gravity_bitboard.turn_on(x as u32, y - 1);};
+                            platform_bitboard.turn_on(bitboard::Bitboard::coord_to_index(x as u16, y, grid_width));
                         },
                         _ => panic!("grid should only contain '.' and '#'")
                     }
@@ -71,7 +68,7 @@ impl GameDefinition {
             reader.read_line(&mut input_line).unwrap();
             let my_snake_id = input_line
                 .trim()
-                .parse::<u32>()
+                .parse::<u8>()
                 .unwrap();
 
             my_snake_ids.insert(my_snake_id);
@@ -83,7 +80,7 @@ impl GameDefinition {
             reader.read_line(&mut input_line).unwrap();
             let enemy_snake_id = input_line
                 .trim()
-                .parse::<u32>()
+                .parse::<u8>()
                 .unwrap();
 
             enemy_snake_ids.insert(enemy_snake_id);
@@ -93,11 +90,18 @@ impl GameDefinition {
             enemy_snake_ids: enemy_snake_ids,
             my_id: my_id,
             my_snake_ids: my_snake_ids,
-            gravity_bitboard: gravity_bitboard,
             grid_height: grid_height,
             grid_width: grid_width,
             platform_bitboard: platform_bitboard,
         }
+    }
+
+    pub fn get_grid_height(&self) -> u16 {
+        self.grid_height
+    }
+
+    pub fn get_grid_width(&self) -> u16 {
+        self.grid_width
     }
 
     pub fn get_snake_count_per_player(&self) -> usize {
@@ -108,251 +112,161 @@ impl GameDefinition {
 pub struct GameSimulator {
     collision_bitboard: bitboard::Bitboard,
     gravity_bitboard: bitboard::Bitboard,
-    power_sources_to_remove: Vec<(u32, u32)>,
+    power_sources_to_remove: Vec<usize>,
 }
 
-impl<'a> GameSimulator {
-    pub fn apply(&mut self, game_state: &GameState<'a>, actions: &std::collections::HashMap<u32, action::Direction>) -> GameState<'a> {
+impl GameSimulator {
+    pub fn apply(
+        &mut self,
+        game_state: &GameState,
+        actions: [Option<action::Direction>; GameState::MAX_SNAKE_COUNT],
+        game_definition: &GameDefinition
+    ) -> GameState {
         let mut next_game_state = game_state.clone();
 
         // collision = platform + other snakes
-        self.collision_bitboard = game_state.game_definition.platform_bitboard.clone();
+        self.collision_bitboard = game_definition.platform_bitboard;
         // gravity = platform + other snakes + power sources
-        self.gravity_bitboard = game_state.game_definition.platform_bitboard.or(
+        self.gravity_bitboard = game_definition.platform_bitboard.or(
             &game_state.power_source_bitboard
         );
 
         // first move all snakes and update collision board for later purpose
-        for (snake_id, snake) in next_game_state.snake_id_to_snake.iter_mut() {
-            if actions.contains_key(snake_id) {
-                snake.move_toward(actions[snake_id].clone());
-            }
-            else {
-                snake.move_same_direction();
-            }
+        for snake_id in 0..GameState::MAX_SNAKE_COUNT {
+            if let Some(snake) = next_game_state.snakes[snake_id].as_mut() {
 
-            if *snake_id == 1 {
-                println!("{snake:?}");
-                let is_not_empty = snake.get_body_bitboard().is_not_empty();
-                println!("{is_not_empty:?}")
-            }
-
-            // add the entire snake as collision, head not included
-            snake.with_headless_body_bitboard(
-                |body_bitboar| {self.collision_bitboard.or_inplace(body_bitboar)}
-            );
-
-            // add the entire snake as gravity, head included
-            self.gravity_bitboard.or_inplace(snake.get_body_bitboard());
-            if *snake_id == 1 {
-                println!("gravity bitboard after snake 1 moved");
-                for y in 0..10 {
-                    for x in 0..18 {
-                        let c = if self.gravity_bitboard.is_on(x, y) {'#'} else {'.'};
-                        print!("{c} ");
-                    }
-                    println!("");
+                match actions[snake_id] {
+                    Some(direction) => snake.move_toward(direction, game_definition.grid_width, game_definition.grid_height),
+                    _ => snake.move_same_direction(game_definition.grid_width, game_definition.grid_height),
                 }
-                println!("");
-            }
+
+                // add the entire snake as collision, head not included
+                snake.with_headless_body_bitboard(
+                    game_definition.grid_width,
+                    game_definition.grid_height,
+                    |body_bitboar| {self.collision_bitboard.or_inplace(body_bitboar)}
+                );
+
+                // add the entire snake as gravity, head included
+                self.gravity_bitboard.or_inplace(snake.get_body_bitboard());
+                }
         }
 
         self.power_sources_to_remove.clear();
         
         // second, check if snakes grow, collision with something and then
         // should fall
-        for (snake_id, snake) in next_game_state.snake_id_to_snake.iter_mut() {
-            if !snake.get_body_bitboard().is_not_empty() {
-                continue;
-            }
-
-            let (head_x, head_y) = snake.get_head();
-
-            if *snake_id == 1 {
-                println!("snake 1 head before colliding with power source");
-                for y in 0..10 {
-                    for x in 0..18 {
-                        let c = if snake.get_body_bitboard().is_on(x, y) {'#'} else {'.'};
-                        print!("{c} ");
-                    }
-                    println!("");
+        for snake_id in 0..GameState::MAX_SNAKE_COUNT {
+            if let  Some(snake) = next_game_state.snakes[snake_id].as_mut() {
+                if !snake.get_body_bitboard().is_not_empty() {
+                    next_game_state.snakes[snake_id] = None;
+                    continue;
                 }
-                let head = snake.get_head();
-                println!("head {head:?}");
-                println!("");
-            }
 
-            if *snake_id == 1 {
-                println!("power sources bitboard before snake 1 grows");
-                for y in 0..10 {
-                    for x in 0..18 {
-                        let c = if next_game_state.power_source_bitboard.is_on(x, y) {'#'} else {'.'};
-                        print!("{c} ");
-                    }
-                    println!("");
+                let (head_x, head_y) = snake.get_head();
+
+                // check if the snake eats a power source by checking if the head
+                // collides with any power sources
+                if snake.does_head_collide(
+                    &next_game_state.power_source_bitboard,
+                    game_definition.grid_width,
+                    game_definition.grid_height
+                ) {
+                    // as snake can eat the same power source, do not remove it right
+                    // away, keep it for later
+                    // if it collides with the power source bitboard, it is obviously
+                    // positive
+                    self.power_sources_to_remove.push(
+                        bitboard::Bitboard::coord_to_index(head_x as u16, head_y as u16, game_definition.grid_width)
+                    );
+
+                    // grow the snake and add its new body part to collision and
+                    // gravity
+                    snake.grow(game_definition.grid_width, game_definition.grid_height);
+                    snake.with_headless_body_bitboard(
+                        game_definition.grid_width,
+                        game_definition.grid_height,
+                        |body_bitboard| {self.collision_bitboard.or_inplace(body_bitboard)}
+                    );
+                    self.gravity_bitboard.or_inplace(snake.get_body_bitboard());
                 }
-                println!("");
-            }
 
-            // check if the snake eats a power source by checking if the head
-            // collides with any power sources
-            if snake.does_head_collide(&next_game_state.power_source_bitboard) {
-                // as snake can eat the same power source, do not remove it right
-                // away, keep it for later
-                // if it collides with the power source bitboard, it is obviously
-                // positive
-                self.power_sources_to_remove.push((*head_x as u32, *head_y as u32));
+                // check if the head collide with the collision bitboard 
+                // approximation: two head cannot collide one with another
+                if snake.does_head_collide(
+                    &self.collision_bitboard,
+                    game_definition.grid_width,
+                    game_definition.grid_height
+                ) {
+                    snake.remove_head(game_definition.grid_width, game_definition.grid_height);
+                    // if snake is too small, kill it, it may not be perfect
+                    if snake.len() < 3 {
+                        next_game_state.snakes[snake_id] = None;
+                        continue;
+                    }
+                }
 
-                // grow the snake and add its new body part to collision and
-                // gravity
-                snake.grow();
-                snake.with_headless_body_bitboard(
-                    |body_bitboar| {self.collision_bitboard.or_inplace(body_bitboar)}
-                );
+                // remove the snake body from the gravity so it does not collide
+                // with itself
+                self.gravity_bitboard.xor_inplace(snake.get_body_bitboard());
+
+                // move the gravity up so it represents every cell above a platform,
+                // power source or other snake
+                let gravity_up_bitboard = self.gravity_bitboard.move_up(game_definition.grid_width);
+
+                // while snake do not collide with gravity_bitboard, move it down
+                let mut step = 0;
+                while !snake.does_collide(&gravity_up_bitboard) {
+                    snake.move_hitbox_down(game_definition.grid_width);
+                    step += 1;
+                }
+
+                // once we know how much the snake has to go down, move its body down
+                if step > 0 {
+                    snake.move_body_down(step);
+                }
+
+                // add the snake body back to gravity
                 self.gravity_bitboard.or_inplace(snake.get_body_bitboard());
-
-                if *snake_id == 1 {
-                    println!("gravity bitboard after snake 1 grew");
-                    for y in 0..10 {
-                        for x in 0..18 {
-                            let c = if self.gravity_bitboard.is_on(x, y) {'#'} else {'.'};
-                            print!("{c} ");
-                        }
-                        println!("");
-                    }
-                    println!("");
-                }
             }
-
-            // check if the head collide with the collision bitboard 
-            // approximation: two head cannot collide one with another
-            if snake.does_head_collide(&self.collision_bitboard) {
-                snake.remove_head();
-            }
-
-            if *snake_id == 1 {
-                println!("gravity bitboard before substracting snake bitboard");
-                for y in 0..10 {
-                    for x in 0..18 {
-                        let c = if self.gravity_bitboard.is_on(x, y) {'#'} else {'.'};
-                        print!("{c} ");
-                    }
-                    println!("");
-                }
-                println!("");
-            }
-
-            if *snake_id == 1 {
-                println!("snake 1 bitboard before removing it from gravity");
-                for y in 0..10 {
-                    for x in 0..18 {
-                        let c = if snake.get_body_bitboard().is_on(x, y) {'#'} else {'.'};
-                        print!("{c} ");
-                    }
-                    println!("");
-                }
-                println!("");
-            }
-
-            // remove the snake body from the gravity so it does not collide
-            // with itself
-            self.gravity_bitboard.xor_inplace(snake.get_body_bitboard());
-
-            if *snake_id == 1 {
-                println!("gravity bitboard after snake is removed from it");
-                for y in 0..10 {
-                    for x in 0..18 {
-                        let c = if self.gravity_bitboard.is_on(x, y) {'#'} else {'.'};
-                        print!("{c} ");
-                    }
-                    println!("");
-                }
-                println!("");
-            }
-
-
-            // move the gravity up so it represents every cell above a platform,
-            // power source or other snake
-            let gravity_up_bitboard = self.gravity_bitboard.move_up();
-
-            // while snake do not collide with gravity_bitboard, move it down
-            let mut step = 0;
-            while !snake.does_collide(&gravity_up_bitboard) {
-                snake.move_hitbox_down();
-                step += 1;
-            }
-
-            // once we know how much the snake has to go down, move its body down
-            if step > 0 {
-                snake.move_body_down(step);
-            }
-
-            // add the snake body back to gravity
-            self.gravity_bitboard.or_inplace(snake.get_body_bitboard());
         }
 
         // so now, snakes have moved, grew if colliding with power sources
         // shrinked if colliding with anything but head and fall down
 
         // let's remove the power sources
-        for (x, y) in self.power_sources_to_remove.iter() {
-            next_game_state.power_source_bitboard.turn_off(*x, *y);
-        }
-
-        // remove the snakes with len < 3, they are dead
-        next_game_state.snake_id_to_snake
-            .retain(|&snake_id, snake| {
-                let len = snake.len();
-                let is_not_empty = snake.get_body_bitboard().is_not_empty();
-                let retain = len >= 3 && is_not_empty;
-                println!("retain ? {len:?} {is_not_empty:?} ? {retain:?}");
-
-                    retain
-            });
-
-        println!("after death: {:?}", next_game_state.snake_id_to_snake);
+        self.power_sources_to_remove.iter()
+            .for_each(|&bit_index| next_game_state.power_source_bitboard.turn_off(bit_index));
 
         next_game_state
     }
 
-    pub fn new(grid_width: u32) -> GameSimulator {
-        GameSimulator{
-            collision_bitboard: bitboard::Bitboard::new(grid_width),
-            gravity_bitboard: bitboard::Bitboard::new(grid_width),
-            power_sources_to_remove: Vec::with_capacity(4),
+    pub fn new() -> Self {
+        Self {
+            collision_bitboard: bitboard::Bitboard::new(),
+            gravity_bitboard: bitboard::Bitboard::new(),
+            power_sources_to_remove: Vec::with_capacity(16),
         }
     }
 }
 
-#[derive(Clone, Debug, PartialEq)]
-pub struct GameState<'a> {
-    game_definition: &'a GameDefinition,
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct GameState {
     power_source_bitboard: bitboard::Bitboard,
-    snake_id_to_snake: std::collections::HashMap<u32, snake::Snake>,
+    snakes: [Option<snake::Snake>; Self::MAX_SNAKE_COUNT],
 }
 
-impl<'a> GameState<'a> {
-    pub fn get_game_definition(&self) -> &GameDefinition {
-        self.game_definition
-    }
+impl GameState {
+    const MAX_SNAKE_COUNT: usize = 16;
 
-    pub fn new(game_definition: &'a GameDefinition) -> GameState<'a> {
-        let mut snake_id_to_snake: std::collections::HashMap<u32, snake::Snake> = std::collections::HashMap::new();
-        for snake_id in &game_definition.enemy_snake_ids {
-            snake_id_to_snake.insert(*snake_id, snake::Snake::new(game_definition.grid_width));
-        }
-        for snake_id in &game_definition.my_snake_ids {
-            snake_id_to_snake.insert(*snake_id, snake::Snake::new(game_definition.grid_width));
-        }
-
+    pub fn new() -> Self {
         GameState {
-            game_definition: game_definition,
-            power_source_bitboard: bitboard::Bitboard::new(game_definition.grid_width),
-            snake_id_to_snake: snake_id_to_snake,
+            power_source_bitboard: bitboard::Bitboard::new(),
+            snakes: [None; Self::MAX_SNAKE_COUNT],
         }
     }
 
-    pub fn update_from_buffer<R: std::io::BufRead>(&mut self, mut reader: R) {
+    pub fn update_from_buffer<R: std::io::BufRead>(&mut self, mut reader: R, width: u16, height: u16) {
         self.power_source_bitboard.clear();
 
         let mut input_line = String::new();
@@ -370,8 +284,11 @@ impl<'a> GameState<'a> {
                 .split_whitespace()
                 .into_iter();
             self.power_source_bitboard.turn_on(
-                power_source_coord_iter.next().unwrap().parse::<u32>().unwrap(),
-                power_source_coord_iter.next().unwrap().parse::<u32>().unwrap()
+                bitboard::Bitboard::coord_to_index(
+                    power_source_coord_iter.next().unwrap().parse::<u16>().unwrap(),
+                    power_source_coord_iter.next().unwrap().parse::<u16>().unwrap(),
+                    width
+                )
             );
         }
 
@@ -390,9 +307,9 @@ impl<'a> GameState<'a> {
                 .trim()
                 .split_whitespace()
                 .into_iter();
-            let snake_id = snake_iter.next().unwrap().parse::<u32>().unwrap();
+            let snake_id = snake_iter.next().unwrap().parse::<u8>().unwrap();
             snake_ids.insert(snake_id);
-            let snake = self.snake_id_to_snake.get_mut(&snake_id).unwrap();
+            let snake = self.snakes[snake_id as usize].get_or_insert(snake::Snake::new());
             snake.clear();
             snake_iter
                 .next()
@@ -404,26 +321,30 @@ impl<'a> GameState<'a> {
                         let x = body_part_coord_iter
                             .next()
                             .unwrap()
-                            .parse::<i32>()
+                            .parse::<i16>()
                             .unwrap();
                         let y = body_part_coord_iter
                             .next()
                             .unwrap()
-                            .parse::<i32>()
+                            .parse::<i16>()
                             .unwrap();
-                        snake.add_body_part(x, y);
+                        snake.add_body_part(x, y, width, height);
                     }
                 )
         }
 
-        self.snake_id_to_snake.retain(|snake_id, _| snake_ids.contains(snake_id));
+        for snake_id in 0..Self::MAX_SNAKE_COUNT {
+            if !snake_ids.contains(&(snake_id as u8)) {
+                self.snakes[snake_id] = None;
+            }
+        }
     }
 }
 
 #[cfg(test)]
 mod test {
     use super::*;
-    use pretty_assertions::assert_eq;
+    // use pretty_assertions::assert_eq;
 
     #[test] fn can_apply_actions() {
         let input = r#"0
@@ -451,7 +372,7 @@ mod test {
 
         let game_definition = GameDefinition::from_buffer(reader);
 
-        let mut game_state = GameState::new(&game_definition);
+        let mut game_state = GameState::new();
 
         let input = r#"18
             0 2
@@ -482,17 +403,21 @@ mod test {
         let cursor = std::io::Cursor::new(input.as_bytes());
         let reader = std::io::BufReader::new(cursor);
 
-        game_state.update_from_buffer(reader);
+        game_state.update_from_buffer(
+            reader,
+            game_definition.grid_width,
+            game_definition.grid_height
+        );
 
-        let mut simulator = GameSimulator::new(game_definition.grid_width);
+        let mut simulator = GameSimulator::new();
 
         let mut expected_game_state = game_state.clone();
 
-        let mut actions = std::collections::HashMap::new();
-        actions.insert(1, action::Direction::Right);
-        actions.insert(2, action::Direction::Right);
-        actions.insert(3, action::Direction::Left);
-        let game_state = simulator.apply(&game_state, &actions);
+        let mut actions: [Option<action::Direction>; GameState::MAX_SNAKE_COUNT] = [None; GameState::MAX_SNAKE_COUNT];
+        actions[1] = Some(action::Direction::Right);
+        actions[2] = Some(action::Direction::Right);
+        actions[3] = Some(action::Direction::Left);
+        let game_state = simulator.apply(&game_state, actions, &game_definition);
 
         let input = r#"18
             0 2
@@ -521,15 +446,22 @@ mod test {
         "#;
         let cursor = std::io::Cursor::new(input.as_bytes());
         let reader = std::io::BufReader::new(cursor);
-        expected_game_state.update_from_buffer(reader);
+        expected_game_state.update_from_buffer(
+            reader,
+            game_definition.grid_width,
+            game_definition.grid_height
+        );
+
+        for snake_id in 0..16 {
+            assert_eq!(game_state.snakes[snake_id], expected_game_state.snakes[snake_id]);
+        }
 
         assert_eq!(game_state, expected_game_state);
 
-        let mut actions = std::collections::HashMap::new();
-        actions.insert(1, action::Direction::Right);
-        actions.insert(2, action::Direction::Up);
-        actions.insert(3, action::Direction::Left);
-        let game_state = simulator.apply(&game_state, &actions);
+        actions[1] = Some(action::Direction::Right);
+        actions[2] = Some(action::Direction::Up);
+        actions[3] = Some(action::Direction::Left);
+        let game_state = simulator.apply(&game_state, actions, &game_definition);
 
         let input = r#"16
             0 2
@@ -556,15 +488,18 @@ mod test {
         "#;
         let cursor = std::io::Cursor::new(input.as_bytes());
         let reader = std::io::BufReader::new(cursor);
-        expected_game_state.update_from_buffer(reader);
+        expected_game_state.update_from_buffer(
+            reader,
+            game_definition.grid_width,
+            game_definition.grid_height
+        );
 
         assert_eq!(game_state, expected_game_state);
 
-        let mut actions = std::collections::HashMap::new();
-        actions.insert(1, action::Direction::Right);
-        actions.insert(2, action::Direction::Up);
-        actions.insert(3, action::Direction::Down);
-        let game_state = simulator.apply(&game_state, &actions);
+        actions[1] = Some(action::Direction::Right);
+        actions[2] = Some(action::Direction::Up);
+        actions[3] = Some(action::Direction::Down);
+        let game_state = simulator.apply(&game_state, actions, &game_definition);
 
         let input = r#"15
             17 2
@@ -590,15 +525,18 @@ mod test {
         "#;
         let cursor = std::io::Cursor::new(input.as_bytes());
         let reader = std::io::BufReader::new(cursor);
-        expected_game_state.update_from_buffer(reader);
+        expected_game_state.update_from_buffer(
+            reader,
+            game_definition.grid_width,
+            game_definition.grid_height
+        );
 
         assert_eq!(game_state, expected_game_state);
 
-        let mut actions = std::collections::HashMap::new();
-        actions.insert(1, action::Direction::Right);
-        actions.insert(2, action::Direction::Up);
-        actions.insert(3, action::Direction::Down);
-        let game_state = simulator.apply(&game_state, &actions);
+        actions[1] = Some(action::Direction::Right);
+        actions[2] = Some(action::Direction::Up);
+        actions[3] = Some(action::Direction::Down);
+        let game_state = simulator.apply(&game_state, actions, &game_definition);
 
         let input = r#"15
             17 2
@@ -624,15 +562,18 @@ mod test {
         "#;
         let cursor = std::io::Cursor::new(input.as_bytes());
         let reader = std::io::BufReader::new(cursor);
-        expected_game_state.update_from_buffer(reader);
+        expected_game_state.update_from_buffer(
+            reader,
+            game_definition.grid_width,
+            game_definition.grid_height
+        );
 
         assert_eq!(game_state, expected_game_state);
 
-        let mut actions = std::collections::HashMap::new();
-        actions.insert(1, action::Direction::Right);
-        actions.insert(2, action::Direction::Up);
-        actions.insert(3, action::Direction::Down);
-        let game_state = simulator.apply(&game_state, &actions);
+        actions[1] = Some(action::Direction::Right);
+        actions[2] = Some(action::Direction::Up);
+        actions[3] = Some(action::Direction::Down);
+        let game_state = simulator.apply(&game_state, actions, &game_definition);
 
         let input = r#"14
             17 2
@@ -657,15 +598,18 @@ mod test {
         "#;
         let cursor = std::io::Cursor::new(input.as_bytes());
         let reader = std::io::BufReader::new(cursor);
-        expected_game_state.update_from_buffer(reader);
+        expected_game_state.update_from_buffer(
+            reader,
+            game_definition.grid_width,
+            game_definition.grid_height
+        );
 
         assert_eq!(game_state, expected_game_state);
 
-        let mut actions = std::collections::HashMap::new();
-        actions.insert(1, action::Direction::Right);
-        actions.insert(2, action::Direction::Up);
-        actions.insert(3, action::Direction::Down);
-        let game_state = simulator.apply(&game_state, &actions);
+        actions[1] = Some(action::Direction::Right);
+        actions[2] = Some(action::Direction::Up);
+        actions[3] = Some(action::Direction::Down);
+        let game_state = simulator.apply(&game_state, actions, &game_definition);
 
         let input = r#"14
             17 2
@@ -689,15 +633,18 @@ mod test {
         "#;
         let cursor = std::io::Cursor::new(input.as_bytes());
         let reader = std::io::BufReader::new(cursor);
-        expected_game_state.update_from_buffer(reader);
+        expected_game_state.update_from_buffer(
+            reader,
+            game_definition.grid_width,
+            game_definition.grid_height
+        );
 
         assert_eq!(game_state, expected_game_state);
 
-        let mut actions = std::collections::HashMap::new();
-        actions.insert(1, action::Direction::Right);
-        actions.insert(2, action::Direction::Up);
-        actions.insert(3, action::Direction::Down);
-        let game_state = simulator.apply(&game_state, &actions);
+        actions[1] = Some(action::Direction::Right);
+        actions[2] = Some(action::Direction::Up);
+        actions[3] = Some(action::Direction::Down);
+        let game_state = simulator.apply(&game_state, actions, &game_definition);
 
         let input = r#"13
             17 2
@@ -720,14 +667,17 @@ mod test {
         "#;
         let cursor = std::io::Cursor::new(input.as_bytes());
         let reader = std::io::BufReader::new(cursor);
-        expected_game_state.update_from_buffer(reader);
+        expected_game_state.update_from_buffer(
+            reader,
+            game_definition.grid_width,
+            game_definition.grid_height
+        );
 
         assert_eq!(game_state, expected_game_state);
 
-        let mut actions = std::collections::HashMap::new();
-        actions.insert(1, action::Direction::Right);
-        actions.insert(2, action::Direction::Up);
-        let game_state = simulator.apply(&game_state, &actions);
+        actions[1] = Some(action::Direction::Right);
+        actions[2] = Some(action::Direction::Up);
+        let game_state = simulator.apply(&game_state, actions, &game_definition);
 
         let input = r#"13
             17 2
@@ -750,14 +700,17 @@ mod test {
         "#;
         let cursor = std::io::Cursor::new(input.as_bytes());
         let reader = std::io::BufReader::new(cursor);
-        expected_game_state.update_from_buffer(reader);
+        expected_game_state.update_from_buffer(
+            reader,
+            game_definition.grid_width,
+            game_definition.grid_height
+        );
 
         assert_eq!(game_state, expected_game_state);
 
-        let mut actions = std::collections::HashMap::new();
-        actions.insert(1, action::Direction::Right);
-        actions.insert(2, action::Direction::Up);
-        let game_state = simulator.apply(&game_state, &actions);
+        actions[1] = Some(action::Direction::Right);
+        actions[2] = Some(action::Direction::Up);
+        let game_state = simulator.apply(&game_state, actions, &game_definition);
 
         let input = r#"13
             17 2
@@ -780,14 +733,17 @@ mod test {
         "#;
         let cursor = std::io::Cursor::new(input.as_bytes());
         let reader = std::io::BufReader::new(cursor);
-        expected_game_state.update_from_buffer(reader);
+        expected_game_state.update_from_buffer(
+            reader,
+            game_definition.grid_width,
+            game_definition.grid_height
+        );
 
         assert_eq!(game_state, expected_game_state);
 
-        let mut actions = std::collections::HashMap::new();
-        actions.insert(1, action::Direction::Right);
-        actions.insert(2, action::Direction::Up);
-        let game_state = simulator.apply(&game_state, &actions);
+        actions[1] = Some(action::Direction::Right);
+        actions[2] = Some(action::Direction::Up);
+        let game_state = simulator.apply(&game_state, actions, &game_definition);
 
         let input = r#"13
             17 2
@@ -810,14 +766,17 @@ mod test {
         "#;
         let cursor = std::io::Cursor::new(input.as_bytes());
         let reader = std::io::BufReader::new(cursor);
-        expected_game_state.update_from_buffer(reader);
+        expected_game_state.update_from_buffer(
+            reader,
+            game_definition.grid_width,
+            game_definition.grid_height
+        );
 
         assert_eq!(game_state, expected_game_state);
 
-        let mut actions = std::collections::HashMap::new();
-        actions.insert(1, action::Direction::Right);
-        actions.insert(2, action::Direction::Up);
-        let game_state = simulator.apply(&game_state, &actions);
+        actions[1] = Some(action::Direction::Right);
+        actions[2] = Some(action::Direction::Up);
+        let game_state = simulator.apply(&game_state, actions, &game_definition);
 
         let input = r#"13
             17 2
@@ -840,14 +799,17 @@ mod test {
         "#;
         let cursor = std::io::Cursor::new(input.as_bytes());
         let reader = std::io::BufReader::new(cursor);
-        expected_game_state.update_from_buffer(reader);
+        expected_game_state.update_from_buffer(
+            reader,
+            game_definition.grid_width,
+            game_definition.grid_height
+        );
 
         assert_eq!(game_state, expected_game_state);
 
-        let mut actions = std::collections::HashMap::new();
-        actions.insert(1, action::Direction::Right);
-        actions.insert(2, action::Direction::Up);
-        let game_state = simulator.apply(&game_state, &actions);
+        actions[1] = Some(action::Direction::Right);
+        actions[2] = Some(action::Direction::Up);
+        let game_state = simulator.apply(&game_state, actions, &game_definition);
 
         let input = r#"13
             17 2
@@ -869,14 +831,17 @@ mod test {
         "#;
         let cursor = std::io::Cursor::new(input.as_bytes());
         let reader = std::io::BufReader::new(cursor);
-        expected_game_state.update_from_buffer(reader);
+        expected_game_state.update_from_buffer(
+            reader,
+            game_definition.grid_width,
+            game_definition.grid_height
+        );
 
         assert_eq!(game_state, expected_game_state);
 
-        let mut actions = std::collections::HashMap::new();
-        actions.insert(1, action::Direction::Right);
-        actions.insert(2, action::Direction::Up);
-        let game_state = simulator.apply(&game_state, &actions);
+        actions[1] = Some(action::Direction::Right);
+        actions[2] = Some(action::Direction::Up);
+        let game_state = simulator.apply(&game_state, actions, &game_definition);
 
         let input = r#"13
             17 2
@@ -898,7 +863,11 @@ mod test {
         "#;
         let cursor = std::io::Cursor::new(input.as_bytes());
         let reader = std::io::BufReader::new(cursor);
-        expected_game_state.update_from_buffer(reader);
+        expected_game_state.update_from_buffer(
+            reader,
+            game_definition.grid_width,
+            game_definition.grid_height
+        );
 
         assert_eq!(game_state, expected_game_state);
     }
@@ -949,218 +918,91 @@ mod test {
         assert_eq!(game_definition.my_snake_ids, expected_my_snake_ids);
         assert_eq!(game_definition.grid_height, 14);
         assert_eq!(game_definition.grid_width, 26);
-        let mut expected_platform_bitboard = bitboard::Bitboard::new(26);
-        expected_platform_bitboard.turn_on(9, 2);
-        expected_platform_bitboard.turn_on(16, 2);
-        expected_platform_bitboard.turn_on(8, 3);
-        expected_platform_bitboard.turn_on(17, 3);
-        expected_platform_bitboard.turn_on(4, 4);
-        expected_platform_bitboard.turn_on(5, 4);
-        expected_platform_bitboard.turn_on(20, 4);
-        expected_platform_bitboard.turn_on(21, 4);
-        expected_platform_bitboard.turn_on(7, 5);
-        expected_platform_bitboard.turn_on(18, 5);
-        expected_platform_bitboard.turn_on(8, 6);
-        expected_platform_bitboard.turn_on(9, 6);
-        expected_platform_bitboard.turn_on(16, 6);
-        expected_platform_bitboard.turn_on(17, 6);
-        expected_platform_bitboard.turn_on(2, 7);
-        expected_platform_bitboard.turn_on(23, 7);
-        expected_platform_bitboard.turn_on(3, 8);
-        expected_platform_bitboard.turn_on(22, 8);
-        expected_platform_bitboard.turn_on(0, 9);
-        expected_platform_bitboard.turn_on(1, 9);
-        expected_platform_bitboard.turn_on(3, 9);
-        expected_platform_bitboard.turn_on(4, 9);
-        expected_platform_bitboard.turn_on(12, 9);
-        expected_platform_bitboard.turn_on(13, 9);
-        expected_platform_bitboard.turn_on(21, 9);
-        expected_platform_bitboard.turn_on(22, 9);
-        expected_platform_bitboard.turn_on(24, 9);
-        expected_platform_bitboard.turn_on(25, 9);
-        expected_platform_bitboard.turn_on(5, 10);
-        expected_platform_bitboard.turn_on(6, 10);
-        expected_platform_bitboard.turn_on(11, 10);
-        expected_platform_bitboard.turn_on(12, 10);
-        expected_platform_bitboard.turn_on(13, 10);
-        expected_platform_bitboard.turn_on(14, 10);
-        expected_platform_bitboard.turn_on(19, 10);
-        expected_platform_bitboard.turn_on(20, 10);
-        expected_platform_bitboard.turn_on(5, 11);
-        expected_platform_bitboard.turn_on(6, 11);
-        expected_platform_bitboard.turn_on(10, 11);
-        expected_platform_bitboard.turn_on(11, 11);
-        expected_platform_bitboard.turn_on(12, 11);
-        expected_platform_bitboard.turn_on(13, 11);
-        expected_platform_bitboard.turn_on(14, 11);
-        expected_platform_bitboard.turn_on(15, 11);
-        expected_platform_bitboard.turn_on(19, 11);
-        expected_platform_bitboard.turn_on(20, 11);
-        expected_platform_bitboard.turn_on(1, 12);
-        expected_platform_bitboard.turn_on(4, 12);
-        expected_platform_bitboard.turn_on(5, 12);
-        expected_platform_bitboard.turn_on(6, 12);
-        expected_platform_bitboard.turn_on(9, 12);
-        expected_platform_bitboard.turn_on(10, 12);
-        expected_platform_bitboard.turn_on(11, 12);
-        expected_platform_bitboard.turn_on(12, 12);
-        expected_platform_bitboard.turn_on(13, 12);
-        expected_platform_bitboard.turn_on(14, 12);
-        expected_platform_bitboard.turn_on(15, 12);
-        expected_platform_bitboard.turn_on(16, 12);
-        expected_platform_bitboard.turn_on(19, 12);
-        expected_platform_bitboard.turn_on(20, 12);
-        expected_platform_bitboard.turn_on(21, 12);
-        expected_platform_bitboard.turn_on(24, 12);
+        let width = 26;
+        let mut expected_platform_bitboard = bitboard::Bitboard::new();
+        expected_platform_bitboard.turn_on(bitboard::Bitboard::coord_to_index(9, 2, width));
+        expected_platform_bitboard.turn_on(bitboard::Bitboard::coord_to_index(16, 2, width));
+        expected_platform_bitboard.turn_on(bitboard::Bitboard::coord_to_index(8, 3, width));
+        expected_platform_bitboard.turn_on(bitboard::Bitboard::coord_to_index(17, 3, width));
+        expected_platform_bitboard.turn_on(bitboard::Bitboard::coord_to_index(4, 4, width));
+        expected_platform_bitboard.turn_on(bitboard::Bitboard::coord_to_index(5, 4, width));
+        expected_platform_bitboard.turn_on(bitboard::Bitboard::coord_to_index(20, 4, width));
+        expected_platform_bitboard.turn_on(bitboard::Bitboard::coord_to_index(21, 4, width));
+        expected_platform_bitboard.turn_on(bitboard::Bitboard::coord_to_index(7, 5, width));
+        expected_platform_bitboard.turn_on(bitboard::Bitboard::coord_to_index(18, 5, width));
+        expected_platform_bitboard.turn_on(bitboard::Bitboard::coord_to_index(8, 6, width));
+        expected_platform_bitboard.turn_on(bitboard::Bitboard::coord_to_index(9, 6, width));
+        expected_platform_bitboard.turn_on(bitboard::Bitboard::coord_to_index(16, 6, width));
+        expected_platform_bitboard.turn_on(bitboard::Bitboard::coord_to_index(17, 6, width));
+        expected_platform_bitboard.turn_on(bitboard::Bitboard::coord_to_index(2, 7, width));
+        expected_platform_bitboard.turn_on(bitboard::Bitboard::coord_to_index(23, 7, width));
+        expected_platform_bitboard.turn_on(bitboard::Bitboard::coord_to_index(3, 8, width));
+        expected_platform_bitboard.turn_on(bitboard::Bitboard::coord_to_index(22, 8, width));
+        expected_platform_bitboard.turn_on(bitboard::Bitboard::coord_to_index(0, 9, width));
+        expected_platform_bitboard.turn_on(bitboard::Bitboard::coord_to_index(1, 9, width));
+        expected_platform_bitboard.turn_on(bitboard::Bitboard::coord_to_index(3, 9, width));
+        expected_platform_bitboard.turn_on(bitboard::Bitboard::coord_to_index(4, 9, width));
+        expected_platform_bitboard.turn_on(bitboard::Bitboard::coord_to_index(12, 9, width));
+        expected_platform_bitboard.turn_on(bitboard::Bitboard::coord_to_index(13, 9, width));
+        expected_platform_bitboard.turn_on(bitboard::Bitboard::coord_to_index(21, 9, width));
+        expected_platform_bitboard.turn_on(bitboard::Bitboard::coord_to_index(22, 9, width));
+        expected_platform_bitboard.turn_on(bitboard::Bitboard::coord_to_index(24, 9, width));
+        expected_platform_bitboard.turn_on(bitboard::Bitboard::coord_to_index(25, 9, width));
+        expected_platform_bitboard.turn_on(bitboard::Bitboard::coord_to_index(5, 10, width));
+        expected_platform_bitboard.turn_on(bitboard::Bitboard::coord_to_index(6, 10, width));
+        expected_platform_bitboard.turn_on(bitboard::Bitboard::coord_to_index(11, 10, width));
+        expected_platform_bitboard.turn_on(bitboard::Bitboard::coord_to_index(12, 10, width));
+        expected_platform_bitboard.turn_on(bitboard::Bitboard::coord_to_index(13, 10, width));
+        expected_platform_bitboard.turn_on(bitboard::Bitboard::coord_to_index(14, 10, width));
+        expected_platform_bitboard.turn_on(bitboard::Bitboard::coord_to_index(19, 10, width));
+        expected_platform_bitboard.turn_on(bitboard::Bitboard::coord_to_index(20, 10, width));
+        expected_platform_bitboard.turn_on(bitboard::Bitboard::coord_to_index(5, 11, width));
+        expected_platform_bitboard.turn_on(bitboard::Bitboard::coord_to_index(6, 11, width));
+        expected_platform_bitboard.turn_on(bitboard::Bitboard::coord_to_index(10, 11, width));
+        expected_platform_bitboard.turn_on(bitboard::Bitboard::coord_to_index(11, 11, width));
+        expected_platform_bitboard.turn_on(bitboard::Bitboard::coord_to_index(12, 11, width));
+        expected_platform_bitboard.turn_on(bitboard::Bitboard::coord_to_index(13, 11, width));
+        expected_platform_bitboard.turn_on(bitboard::Bitboard::coord_to_index(14, 11, width));
+        expected_platform_bitboard.turn_on(bitboard::Bitboard::coord_to_index(15, 11, width));
+        expected_platform_bitboard.turn_on(bitboard::Bitboard::coord_to_index(19, 11, width));
+        expected_platform_bitboard.turn_on(bitboard::Bitboard::coord_to_index(20, 11, width));
+        expected_platform_bitboard.turn_on(bitboard::Bitboard::coord_to_index(1, 12, width));
+        expected_platform_bitboard.turn_on(bitboard::Bitboard::coord_to_index(4, 12, width));
+        expected_platform_bitboard.turn_on(bitboard::Bitboard::coord_to_index(5, 12, width));
+        expected_platform_bitboard.turn_on(bitboard::Bitboard::coord_to_index(6, 12, width));
+        expected_platform_bitboard.turn_on(bitboard::Bitboard::coord_to_index(9, 12, width));
+        expected_platform_bitboard.turn_on(bitboard::Bitboard::coord_to_index(10, 12, width));
+        expected_platform_bitboard.turn_on(bitboard::Bitboard::coord_to_index(11, 12, width));
+        expected_platform_bitboard.turn_on(bitboard::Bitboard::coord_to_index(12, 12, width));
+        expected_platform_bitboard.turn_on(bitboard::Bitboard::coord_to_index(13, 12, width));
+        expected_platform_bitboard.turn_on(bitboard::Bitboard::coord_to_index(14, 12, width));
+        expected_platform_bitboard.turn_on(bitboard::Bitboard::coord_to_index(15, 12, width));
+        expected_platform_bitboard.turn_on(bitboard::Bitboard::coord_to_index(16, 12, width));
+        expected_platform_bitboard.turn_on(bitboard::Bitboard::coord_to_index(19, 12, width));
+        expected_platform_bitboard.turn_on(bitboard::Bitboard::coord_to_index(20, 12, width));
+        expected_platform_bitboard.turn_on(bitboard::Bitboard::coord_to_index(21, 12, width));
+        expected_platform_bitboard.turn_on(bitboard::Bitboard::coord_to_index(24, 12, width));
         for x in 0..26 {
-            expected_platform_bitboard.turn_on(x, 13);
+            expected_platform_bitboard.turn_on(bitboard::Bitboard::coord_to_index(x, 13, width));
         }
         assert_eq!(game_definition.platform_bitboard, expected_platform_bitboard);
-        let mut expected_gravity_bitboard = bitboard::Bitboard::new(26);
-        expected_gravity_bitboard.turn_on(9, 1);
-        expected_gravity_bitboard.turn_on(16, 1);
-        expected_gravity_bitboard.turn_on(8, 2);
-        expected_gravity_bitboard.turn_on(17, 2);
-        expected_gravity_bitboard.turn_on(4, 3);
-        expected_gravity_bitboard.turn_on(5, 3);
-        expected_gravity_bitboard.turn_on(20, 3);
-        expected_gravity_bitboard.turn_on(21, 3);
-        expected_gravity_bitboard.turn_on(7, 4);
-        expected_gravity_bitboard.turn_on(18, 4);
-        expected_gravity_bitboard.turn_on(8, 5);
-        expected_gravity_bitboard.turn_on(9, 5);
-        expected_gravity_bitboard.turn_on(16, 5);
-        expected_gravity_bitboard.turn_on(17, 5);
-        expected_gravity_bitboard.turn_on(2, 6);
-        expected_gravity_bitboard.turn_on(23, 6);
-        expected_gravity_bitboard.turn_on(3, 7);
-        expected_gravity_bitboard.turn_on(22, 7);
-        expected_gravity_bitboard.turn_on(0, 8);
-        expected_gravity_bitboard.turn_on(1, 8);
-        expected_gravity_bitboard.turn_on(3, 8);
-        expected_gravity_bitboard.turn_on(4, 8);
-        expected_gravity_bitboard.turn_on(12, 8);
-        expected_gravity_bitboard.turn_on(13, 8);
-        expected_gravity_bitboard.turn_on(21, 8);
-        expected_gravity_bitboard.turn_on(22, 8);
-        expected_gravity_bitboard.turn_on(24, 8);
-        expected_gravity_bitboard.turn_on(25, 8);
-        expected_gravity_bitboard.turn_on(5, 9);
-        expected_gravity_bitboard.turn_on(6, 9);
-        expected_gravity_bitboard.turn_on(11, 9);
-        expected_gravity_bitboard.turn_on(12, 9);
-        expected_gravity_bitboard.turn_on(13, 9);
-        expected_gravity_bitboard.turn_on(14, 9);
-        expected_gravity_bitboard.turn_on(19, 9);
-        expected_gravity_bitboard.turn_on(20, 9);
-        expected_gravity_bitboard.turn_on(5, 10);
-        expected_gravity_bitboard.turn_on(6, 10);
-        expected_gravity_bitboard.turn_on(10, 10);
-        expected_gravity_bitboard.turn_on(11, 10);
-        expected_gravity_bitboard.turn_on(12, 10);
-        expected_gravity_bitboard.turn_on(13, 10);
-        expected_gravity_bitboard.turn_on(14, 10);
-        expected_gravity_bitboard.turn_on(15, 10);
-        expected_gravity_bitboard.turn_on(19, 10);
-        expected_gravity_bitboard.turn_on(20, 10);
-        expected_gravity_bitboard.turn_on(1, 11);
-        expected_gravity_bitboard.turn_on(4, 11);
-        expected_gravity_bitboard.turn_on(5, 11);
-        expected_gravity_bitboard.turn_on(6, 11);
-        expected_gravity_bitboard.turn_on(9, 11);
-        expected_gravity_bitboard.turn_on(10, 11);
-        expected_gravity_bitboard.turn_on(11, 11);
-        expected_gravity_bitboard.turn_on(12, 11);
-        expected_gravity_bitboard.turn_on(13, 11);
-        expected_gravity_bitboard.turn_on(14, 11);
-        expected_gravity_bitboard.turn_on(15, 11);
-        expected_gravity_bitboard.turn_on(16, 11);
-        expected_gravity_bitboard.turn_on(19, 11);
-        expected_gravity_bitboard.turn_on(20, 11);
-        expected_gravity_bitboard.turn_on(21, 11);
-        expected_gravity_bitboard.turn_on(24, 11);
-        for x in 0..26 {
-            expected_gravity_bitboard.turn_on(x, 12);
-        }
-        assert_eq!(game_definition.gravity_bitboard, expected_gravity_bitboard);
     }
 
     #[test]
     fn can_create_game_state() {
-        let input = r#"0
-            26
-            14
-            ..........................
-            ..........................
-            .........#......#.........
-            ........#........#........
-            ....##..............##....
-            .......#..........#.......
-            ........##......##........
-            ..#....................#..
-            ...#..................#...
-            ##.##.......##.......##.##
-            .....##....####....##.....
-            .....##...######...##.....
-            .#..###..########..###..#.
-            ##########################
-            3
-            0
-            1
-            2
-            3
-            4
-            5
-        "#;
+        let game_state = GameState::new();
 
-        let cursor = std::io::Cursor::new(input.as_bytes());
-        let reader = std::io::BufReader::new(cursor);
-
-        let game_definition = GameDefinition::from_buffer(reader);
-
-        let game_state = GameState::new(&game_definition);
-
-        let expected_power_source_bitboard = bitboard::Bitboard::new(26);
+        let expected_power_source_bitboard = bitboard::Bitboard::new();
         assert_eq!(game_state.power_source_bitboard, expected_power_source_bitboard);
-        let mut expected_snake_id_to_snake_hash_map = std::collections::HashMap::new();
-        for snake_id in 0..6 {
-            expected_snake_id_to_snake_hash_map.insert(snake_id, snake::Snake::new(26));
-        }
-        assert_eq!(game_state.snake_id_to_snake, expected_snake_id_to_snake_hash_map);
+        assert_eq!(game_state.snakes, [None; GameState::MAX_SNAKE_COUNT]);
     }
 
     #[test]
     fn can_update_game_state_from_buffer() {
-        let input = r#"0
-            26
-            14
-            ..........................
-            ..........................
-            .........#......#.........
-            ........#........#........
-            ....##..............##....
-            .......#..........#.......
-            ........##......##........
-            ..#....................#..
-            ...#..................#...
-            ##.##.......##.......##.##
-            .....##....####....##.....
-            .....##...######...##.....
-            .#..###..########..###..#.
-            ##########################
-            2
-            0
-            1
-            3
-            4
-        "#;
+        let width = 26;
+        let height = 14;
 
-        let cursor = std::io::Cursor::new(input.as_bytes());
-        let reader = std::io::BufReader::new(cursor);
-
-        let game_definition = GameDefinition::from_buffer(reader);
-
-        let mut game_state = GameState::new(&game_definition);
+        let mut game_state = GameState::new();
 
         let input = r#"5
             0 0
@@ -1178,44 +1020,44 @@ mod test {
         let cursor = std::io::Cursor::new(input.as_bytes());
         let reader = std::io::BufReader::new(cursor);
 
-        game_state.update_from_buffer(reader);
+        game_state.update_from_buffer(reader, width, height);
 
-        let mut expected_power_source_bitboard = bitboard::Bitboard::new(26);
-        expected_power_source_bitboard.turn_on(0, 0);
-        expected_power_source_bitboard.turn_on(24, 10);
-        expected_power_source_bitboard.turn_on(1, 1);
-        expected_power_source_bitboard.turn_on(13, 3);
-        expected_power_source_bitboard.turn_on(8, 10);
+        let mut expected_power_source_bitboard = bitboard::Bitboard::new();
+        expected_power_source_bitboard.turn_on(bitboard::Bitboard::coord_to_index(0, 0, width));
+        expected_power_source_bitboard.turn_on(bitboard::Bitboard::coord_to_index(24, 10, width));
+        expected_power_source_bitboard.turn_on(bitboard::Bitboard::coord_to_index(1, 1, width));
+        expected_power_source_bitboard.turn_on(bitboard::Bitboard::coord_to_index(13, 3, width));
+        expected_power_source_bitboard.turn_on(bitboard::Bitboard::coord_to_index(8, 10, width));
         assert_eq!(game_state.power_source_bitboard, expected_power_source_bitboard);
 
-        let mut expected_snake_id_to_snake: std::collections::HashMap<u32, snake::Snake> = std::collections::HashMap::new();
-        let mut snake = snake::Snake::new(26);
-        snake.add_body_part(0, 0);
-        snake.add_body_part(1, 0);
-        snake.add_body_part(1, 1);
-        expected_snake_id_to_snake.insert(4, snake);
+        let mut expected_snakes = [None; GameState::MAX_SNAKE_COUNT];
+        let mut snake = snake::Snake::new();
+        snake.add_body_part(0, 0, width, height);
+        snake.add_body_part(1, 0, width, height);
+        snake.add_body_part(1, 1, width, height);
+        expected_snakes[4] = Some(snake);
 
-        let mut snake = snake::Snake::new(26);
-        snake.add_body_part(20, 10);
-        snake.add_body_part(19, 10);
-        snake.add_body_part(19, 9);
-        snake.add_body_part(19, 8);
-        expected_snake_id_to_snake.insert(1, snake);
+        let mut snake = snake::Snake::new();
+        snake.add_body_part(20, 10, width, height);
+        snake.add_body_part(19, 10, width, height);
+        snake.add_body_part(19, 9, width, height);
+        snake.add_body_part(19, 8, width, height);
+        expected_snakes[1] = Some(snake);
 
-        let mut snake = snake::Snake::new(26);
-        snake.add_body_part(10, 10);
-        snake.add_body_part(11, 10);
-        snake.add_body_part(12, 10);
-        snake.add_body_part(13, 10);
-        expected_snake_id_to_snake.insert(3, snake);
+        let mut snake = snake::Snake::new();
+        snake.add_body_part(10, 10, width, height);
+        snake.add_body_part(11, 10, width, height);
+        snake.add_body_part(12, 10, width, height);
+        snake.add_body_part(13, 10, width, height);
+        expected_snakes[3] = Some(snake);
 
-        let mut snake = snake::Snake::new(26);
-        snake.add_body_part(5, 5);
-        snake.add_body_part(6, 5);
-        snake.add_body_part(7, 5);
-        snake.add_body_part(8, 5);
-        expected_snake_id_to_snake.insert(0, snake);
+        let mut snake = snake::Snake::new();
+        snake.add_body_part(5, 5, width, height);
+        snake.add_body_part(6, 5, width, height);
+        snake.add_body_part(7, 5, width, height);
+        snake.add_body_part(8, 5, width, height);
+        expected_snakes[0] = Some(snake);
 
-        assert_eq!(game_state.snake_id_to_snake, expected_snake_id_to_snake);
+        assert_eq!(game_state.snakes, expected_snakes);
     }
 }

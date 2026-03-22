@@ -278,7 +278,7 @@ mod test {
         let width = 5;
         let mut bitboard = bitboard::Bitboard::new();
 
-        bitboard.turn_on(4, 4);
+        bitboard.turn_on(Bitboard::coord_to_index(4, 4, width));
 
         for x in 0..5 {
             for y in 0..5 {
