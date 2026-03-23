@@ -1,6 +1,8 @@
+use crate::state;
+
 pub struct ZobristTable {
     power_sources: [u64; 1350],
-    snake_bodies: [[u64; 1350]; 16],
+    snake_bodies: [[u64; 1350]; state::GameDefinition::MAX_SNAKE_COUNT],
 }
 
 impl ZobristTable {
@@ -19,8 +21,8 @@ impl ZobristTable {
             seed
         };
 
-        let mut snake_bodies = [[0; 1350]; 16];
-        for snake_id in 0..16 {
+        let mut snake_bodies = [[0; 1350]; state::GameDefinition::MAX_SNAKE_COUNT];
+        for snake_id in 0..state::GameDefinition::MAX_SNAKE_COUNT {
             for cell_index in 0..1350 {
                 snake_bodies[snake_id][cell_index] = next_u64();
             }

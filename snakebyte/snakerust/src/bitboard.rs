@@ -6,6 +6,18 @@ pub struct Bitboard {
 impl Bitboard {
     const BITS_LEN: usize = 22;
 
+    pub fn and(&self, bitboard: &Self) -> Self {
+        let mut bits = [0; Self::BITS_LEN];
+
+        for i in 0..Self::BITS_LEN {
+            bits[i] = self.bits[i] & bitboard.bits[i];
+        }
+
+        Self {
+            bits: bits
+        }
+    }
+
     pub fn and_not_inplace(&mut self, bitboard: &Self) {
         for i in 0..Self::BITS_LEN {
             self.bits[i] &= !bitboard.bits[i];
@@ -246,6 +258,29 @@ mod test {
 
     use pretty_assertions::assert_eq;
     use rand::RngExt;
+
+    #[test]
+    fn can_and() {
+        let width = 5;
+
+        let mut bitboard = Bitboard::new();
+        bitboard.turn_on(Bitboard::coord_to_index(2, 2, width));
+        bitboard.turn_on(Bitboard::coord_to_index(1, 2, width));
+        bitboard.turn_on(Bitboard::coord_to_index(3, 2, width));
+        bitboard.turn_on(Bitboard::coord_to_index(2, 1, width));
+        bitboard.turn_on(Bitboard::coord_to_index(2, 3, width));
+
+        let mut other_bitboard = Bitboard::new();
+        other_bitboard.turn_on(Bitboard::coord_to_index(2, 2, width));
+
+        let not_in_place_bitboard = bitboard.and(&other_bitboard);
+
+        let mut expected_bitboard = Bitboard::new();
+        expected_bitboard.turn_on(Bitboard::coord_to_index(2, 2, width));
+
+        assert_eq!(not_in_place_bitboard, expected_bitboard);
+    }
+
 
     #[test]
     fn can_and_not() {

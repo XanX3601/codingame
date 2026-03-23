@@ -10,6 +10,8 @@ fn main() {
 
     let mut game_state = snakerust::state::GameState::new();
 
+    let mut remaining_turn: usize = 200;
+
     loop {
         game_state.update_from_buffer(
             std::io::stdin().lock(),
@@ -23,12 +25,15 @@ fn main() {
             &game_definition,
             &zobrist_table,
             &bitboard_masks,
-            45
+            45,
+            remaining_turn
         );
+
+        remaining_turn -= 1;
 
         for my_snake_id in game_definition.get_my_snake_ids().iter() {
             if let Some(direction) = actions[*my_snake_id as usize] {
-                print!("{my_snake_id} {}", direction.to_string());
+                print!("{my_snake_id} {};", direction.to_string());
             }
         }
         println!("");

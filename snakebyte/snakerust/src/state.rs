@@ -121,7 +121,7 @@ impl GameDefinition {
 }
 
 pub struct GameSimulator {
-    collision_bitboard: bitboard::Bitboard,
+    collision_bitboards: [bitboard::Bitboard; GameDefinition::MAX_SNAKE_COUNT],
     gravity_bitboard: bitboard::Bitboard,
     power_sources_to_remove: Vec<usize>,
 }
@@ -138,7 +138,7 @@ impl GameSimulator {
         next_game_state.zobrist_hash = 0;
 
         // collision = platform + other snakes
-        self.collision_bitboard = game_definition.platform_bitboard;
+        self.collision_bitboards = [game_definition.platform_bitboard.clone(); GameDefinition::MAX_SNAKE_COUNT];
         // gravity = platform + other snakes + power sources
         self.gravity_bitboard = game_definition.platform_bitboard.or(
             &game_state.power_source_bitboard
@@ -147,7 +147,6 @@ impl GameSimulator {
         // first move all snakes and update collision board for later purpose
         for snake_id in 0..GameDefinition::MAX_SNAKE_COUNT {
             if let Some(snake) = next_game_state.snakes[snake_id].as_mut() {
-
                 match actions[snake_id] {
                     Some(direction) => snake.move_toward(direction, game_definition.grid_width, game_definition.grid_height, &zobrist_table, snake_id as u8),
                     _ => snake.move_same_direction(game_definition.grid_width, game_definition.grid_height, &zobrist_table, snake_id as u8),
@@ -157,8 +156,12 @@ impl GameSimulator {
                 snake.with_headless_body_bitboard(
                     game_definition.grid_width,
                     game_definition.grid_height,
-                    |body_bitboar| {self.collision_bitboard.or_inplace(body_bitboar)}
+                    |body_bitboard| {self.collision_bitboards[snake_id].or_inplace(body_bitboard)}
                 );
+                for s_id in 0..GameDefinition::MAX_SNAKE_COUNT {
+                    if s_id == snake_id {continue;}
+                    self.collision_bitboards[s_id].or_inplace(snake.get_body_bitboard());
+                }
 
                 // add the entire snake as gravity, head included
                 self.gravity_bitboard.or_inplace(snake.get_body_bitboard());
@@ -199,15 +202,21 @@ impl GameSimulator {
                     snake.with_headless_body_bitboard(
                         game_definition.grid_width,
                         game_definition.grid_height,
-                        |body_bitboard| {self.collision_bitboard.or_inplace(body_bitboard)}
+                        |body_bitboard| {self.collision_bitboards[snake_id].or_inplace(body_bitboard)}
                     );
+                    for s_id in 0..GameDefinition::MAX_SNAKE_COUNT {
+                        if s_id == snake_id {continue;}
+                        self.collision_bitboards[s_id].or_inplace(snake.get_body_bitboard());
+                    }
+
+
                     self.gravity_bitboard.or_inplace(snake.get_body_bitboard());
                 }
 
                 // check if the head collide with the collision bitboard 
                 // approximation: two head cannot collide one with another
                 if snake.does_head_collide(
-                    &self.collision_bitboard,
+                    &self.collision_bitboards[snake_id],
                     game_definition.grid_width,
                     game_definition.grid_height
                 ) {
@@ -229,9 +238,11 @@ impl GameSimulator {
 
                 // while snake do not collide with gravity_bitboard, move it down
                 let mut step = 0;
-                while !snake.does_collide(&gravity_up_bitboard) {
-                    snake.move_hitbox_down(game_definition.grid_width);
-                    step += 1;
+                if snake.get_body_bitboard().is_not_empty() {
+                    while !snake.does_collide(&gravity_up_bitboard) {
+                        snake.move_hitbox_down(game_definition.grid_width);
+                        step += 1;
+                    }
                 }
 
                 // once we know how much the snake has to go down, move its body down
@@ -265,7 +276,7 @@ impl GameSimulator {
 
     pub fn new() -> Self {
         Self {
-            collision_bitboard: bitboard::Bitboard::new(),
+            collision_bitboards: [bitboard::Bitboard::new(); GameDefinition::MAX_SNAKE_COUNT],
             gravity_bitboard: bitboard::Bitboard::new(),
             power_sources_to_remove: Vec::with_capacity(16),
         }
@@ -281,116 +292,101 @@ pub struct GameState {
 }
 
 impl GameState {
-    pub fn evaluate_old(&self, game_definition: &GameDefinition, bitboard_masks: &bitboard::BitboardMasks) -> [f32; GameDefinition::MAX_SNAKE_COUNT] {
-        // goal is to compute two score: one for me and one for opponent
-
-        let mut my_frontier = bitboard::Bitboard::new();
-        let mut my_obstacles = game_definition.platform_bitboard.clone();
-        let mut my_snakes_len = 0f32;
-        let mut my_territory_size = 0f32;
-        let mut my_power_source_count = 0f32;
-        let mut enemy_frontier = bitboard::Bitboard::new();
-        let mut enemy_obstacles = game_definition.platform_bitboard.clone();
-        let mut enemy_snakes_len = 0f32;
-        let mut enemy_territory_size = 0f32;
-        let mut enemy_power_source_count = 0f32;
-
-        // prepare the voronoi for my team and enemy
-        // also compute the total length 
+    pub fn evaluate(&mut self, root_state: &Self, game_definition: &GameDefinition, bitboard_masks: &bitboard::BitboardMasks) -> [f32; GameDefinition::MAX_SNAKE_COUNT] {
+        // start by computing a collision bitboard and start the territory
+        let mut collision_bitboard = game_definition.get_platform_bitboard().clone();
+        let mut territories = [bitboard::Bitboard::new(); GameDefinition::MAX_SNAKE_COUNT];
         for snake_id in 0..GameDefinition::MAX_SNAKE_COUNT {
-            if let Some(snake) = self.snakes[snake_id] {
-                let is_mine = game_definition.my_snake_ids.contains(&(snake_id as u8));
+            if let Some(snake) = self.get_snake_mut(snake_id) {
+                snake.with_headless_body_bitboard(
+                    game_definition.get_grid_width(),
+                    game_definition.get_grid_height(),
+                    |body_bitboard| {
+                        collision_bitboard.or_inplace(body_bitboard)
+                    }
+                );
 
                 let (head_x, head_y) = snake.get_head();
-                let is_head_in_grid = snake::Snake::is_in_grid(head_x, head_y, game_definition.grid_width, game_definition.grid_height);
 
-                if is_mine {
-                    my_snakes_len += snake.len() as f32;
-                    if is_head_in_grid {
-                        my_frontier.turn_on(bitboard::Bitboard::coord_to_index(head_x as u16, head_y as u16, game_definition.grid_width));
-                        my_territory_size += 1f32;
-                        enemy_obstacles.or_inplace(snake.get_body_bitboard());
-                    }
+                // cannot compute territory with head outside grid
+                if !snake::Snake::is_in_grid(
+                    head_x,
+                    head_y,
+                    game_definition.get_grid_width(),
+                    game_definition.get_grid_height()
+                ) {
+                    continue;
                 }
-                else {
-                    enemy_snakes_len += snake.len() as f32;
-                    if is_head_in_grid {
-                        enemy_frontier.turn_on(bitboard::Bitboard::coord_to_index(head_x as u16, head_y as u16, game_definition.grid_width));
-                        enemy_territory_size += 1f32;
-                        my_obstacles.or_inplace(snake.get_body_bitboard());
-                    }
-                }
+
+                territories[snake_id].turn_on(
+                    bitboard::Bitboard::coord_to_index(
+                        head_x as u16,
+                        head_y as u16,
+                        game_definition.get_grid_width()
+                    )
+                )
             }
         }
 
-        // now do the voronoi to compute the territory size
         let mut cells_claimed = true;
         while cells_claimed {
             cells_claimed = false;
 
-            my_obstacles.or_inplace(&my_frontier);
-            enemy_obstacles.or_inplace(&enemy_frontier);
+            for snake_id in 0..GameDefinition::MAX_SNAKE_COUNT {
+                if self.get_snake(snake_id).is_none() {continue;}
 
-            // first extend the enemy frontier and mine
-            my_frontier.expand_in_place(game_definition.grid_width, bitboard_masks);
-            my_frontier.and_not_inplace(&my_obstacles);
-            enemy_frontier.expand_in_place(game_definition.grid_width, bitboard_masks);
-            enemy_frontier.and_not_inplace(&enemy_obstacles);
+                let territory_size = territories[snake_id].count_ones();
+                territories[snake_id].expand_in_place(game_definition.get_grid_width(), bitboard_masks);
+                territories[snake_id].and_not_inplace(&collision_bitboard);
 
-            if my_frontier.is_not_empty() {
-                cells_claimed = true;
-                enemy_obstacles.or_inplace(&my_frontier);
-
-                my_territory_size += my_frontier.count_ones() as f32;
-                my_power_source_count += my_frontier.count_collide(&self.power_source_bitboard) as f32;
-            }
-            if enemy_frontier.is_not_empty() {
-                cells_claimed = true;
-                my_obstacles.or_inplace(&enemy_frontier);
-
-                enemy_territory_size += enemy_frontier.count_ones() as f32;
-                enemy_power_source_count += enemy_frontier.count_collide(&self.power_source_bitboard) as f32;
+                if territories[snake_id].count_ones() > territory_size {
+                    cells_claimed = true;
+                    // snake territory becomes collision for other snakes
+                    collision_bitboard.or_inplace(&territories[snake_id]);
+                }
             }
         }
-        
-        let power_source_count: f32 = self.power_source_bitboard.count_ones() as f32;
-        let total_grid_area: f32 = (game_definition.grid_width * game_definition.grid_height) as f32;
-        let max_posible_len: f32 = my_snakes_len + enemy_snakes_len + power_source_count;
 
-        let my_score = {
-            0.3 * my_territory_size / total_grid_area
-            + 0.3 * my_snakes_len / max_posible_len
-            + 0.4 * my_power_source_count / power_source_count
-        };
-        let enemy_score = {
-            0.3 * enemy_territory_size / total_grid_area
-            + 0.3 * enemy_snakes_len / max_posible_len
-            + 0.4 * enemy_power_source_count / power_source_count
-        };
+        let power_source_count: f32 = self.power_source_bitboard.count_ones() as f32;
 
         let mut scores = [0f32; GameDefinition::MAX_SNAKE_COUNT];
-
         for snake_id in 0..GameDefinition::MAX_SNAKE_COUNT {
-            if let Some(snake) = self.snakes[snake_id] {
-                let is_mine = game_definition.my_snake_ids.contains(&(snake_id as u8));
+            // only consider my snakes
+            if !game_definition.get_my_snake_ids().contains(&(snake_id as u8)) {
+                continue;
+            }
 
-                scores[snake_id] = if is_mine {my_score} else {enemy_score};
+            if let Some(snake) = self.get_snake(snake_id) {
+                let len: f32 = snake.len() as f32;
+                let len_max: f32 = snake.len() as f32 + power_source_count;
+
+                let territory_size: f32 = territories[snake_id].count_ones() as f32;
+                let territory_max_size: f32 = game_definition.get_grid_width() as f32 * game_definition.get_grid_height() as f32;
+
+                let power_source_controlled_count: f32 = self.power_source_bitboard.and(&territories[snake_id]).count_ones() as f32;
+
+                scores[snake_id] = {
+                    0.3 // being alive give you a base score
+                    + 0.2 * len / len_max // the longer you are, the better
+                    + 0.2 * territory_size / territory_max_size // the bigger your territory, the better
+                    + 0.3 * power_source_controlled_count / power_source_count // the more power source you control the better
+                };
             }
         }
 
         scores
     }
 
-    pub fn evaluate(&self, game_definition: &GameDefinition, bitboard_masks: &bitboard::BitboardMasks) -> [f32; GameDefinition::MAX_SNAKE_COUNT] {
-
-
-        let mut scores = [0f32; GameDefinition::MAX_SNAKE_COUNT];
-
-        scores
+    pub fn get_power_source_bitboard(&self) -> &bitboard::Bitboard {
+        &self.power_source_bitboard
     }
 
     pub fn get_snake(&self, snake_id: usize) -> &Option<snake::Snake> {
         &self.snakes[snake_id]
+    }
+
+    pub fn get_snake_mut(&mut self, snake_id: usize) -> &mut Option<snake::Snake> {
+        &mut self.snakes[snake_id]
     }
 
     pub fn get_zobrist_hash(&self) -> u64 {
@@ -491,7 +487,8 @@ mod test {
     use super::*;
     // use pretty_assertions::assert_eq;
 
-    #[test] fn can_apply_actions() {
+    #[test]
+    fn can_apply_actions() {
         let zobrist_table = zobrist::ZobristTable::new();
 
         let input = r#"0
