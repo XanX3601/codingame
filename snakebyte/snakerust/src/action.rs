@@ -7,6 +7,13 @@ pub enum Direction {
 }
 
 impl Direction {
+    pub const DIRECTIONS: [Direction; 4] = [
+        Direction::Down,
+        Direction::Left,
+        Direction::Right,
+        Direction::Up
+    ];
+
     pub fn apply(&self, x:i16, y:i16) -> (i16, i16) {
         match self {
             Direction::Down => (x, y + 1),
@@ -22,6 +29,15 @@ impl Direction {
             Direction::Left => Direction::Right,
             Direction::Right => Direction::Left,
             Direction::Up => Direction::Down,
+        }
+    }
+
+    pub fn to_string(&self) -> &str {
+        match self {
+            Direction::Down => "DOWN",
+            Direction::Left => "LEFT",
+            Direction::Right => "RIGHT",
+            Direction::Up => "UP",
         }
     }
 }

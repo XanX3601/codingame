@@ -14,6 +14,8 @@ pub struct GameDefinition {
 }
 
 impl GameDefinition {
+    pub const MAX_SNAKE_COUNT: usize = 16;
+
     pub fn from_buffer<R: std::io::BufRead>(mut reader: R) -> GameDefinition {
         let mut input_line = String::new();
         reader.read_line(&mut input_line).unwrap();
@@ -105,6 +107,10 @@ impl GameDefinition {
         self.grid_width
     }
 
+    pub fn get_my_snake_ids(&self) -> &std::collections::HashSet<u8> {
+        &self.my_snake_ids
+    }
+
     pub fn get_snake_count_per_player(&self) -> usize {
         self.my_snake_ids.len()
     }
@@ -120,7 +126,7 @@ impl GameSimulator {
     pub fn apply(
         &mut self,
         game_state: &GameState,
-        actions: [Option<action::Direction>; GameState::MAX_SNAKE_COUNT],
+        actions: [Option<action::Direction>; GameDefinition::MAX_SNAKE_COUNT],
         game_definition: &GameDefinition,
         zobrist_table: &zobrist::ZobristTable,
     ) -> GameState {
@@ -135,7 +141,7 @@ impl GameSimulator {
         );
 
         // first move all snakes and update collision board for later purpose
-        for snake_id in 0..GameState::MAX_SNAKE_COUNT {
+        for snake_id in 0..GameDefinition::MAX_SNAKE_COUNT {
             if let Some(snake) = next_game_state.snakes[snake_id].as_mut() {
 
                 match actions[snake_id] {
@@ -159,7 +165,7 @@ impl GameSimulator {
         
         // second, check if snakes grow, collision with something and then
         // should fall
-        for snake_id in 0..GameState::MAX_SNAKE_COUNT {
+        for snake_id in 0..GameDefinition::MAX_SNAKE_COUNT {
             if let  Some(snake) = next_game_state.snakes[snake_id].as_mut() {
                 if !snake.get_body_bitboard().is_not_empty() {
                     next_game_state.snakes[snake_id] = None;
@@ -266,18 +272,124 @@ impl GameSimulator {
 pub struct GameState {
     power_source_bitboard: bitboard::Bitboard,
     power_source_zobrist_hash: u64,
-    snakes: [Option<snake::Snake>; Self::MAX_SNAKE_COUNT],
+    snakes: [Option<snake::Snake>; GameDefinition::MAX_SNAKE_COUNT],
     zobrist_hash: u64,
 }
 
 impl GameState {
-    const MAX_SNAKE_COUNT: usize = 16;
+    pub fn evaluate(&self, game_definition: &GameDefinition, bitboard_masks: &bitboard::BitboardMasks) -> [f32; GameDefinition::MAX_SNAKE_COUNT] {
+        // goal is to compute two score: one for me and one for opponent
+
+        let mut my_frontier = bitboard::Bitboard::new();
+        let mut my_obstacles = game_definition.platform_bitboard.clone();
+        let mut my_snakes_len = 0f32;
+        let mut my_territory_size = 0f32;
+        let mut my_power_source_count = 0f32;
+        let mut enemy_frontier = bitboard::Bitboard::new();
+        let mut enemy_obstacles = game_definition.platform_bitboard.clone();
+        let mut enemy_snakes_len = 0f32;
+        let mut enemy_territory_size = 0f32;
+        let mut enemy_power_source_count = 0f32;
+
+        // prepare the voronoi for my team and enemy
+        // also compute the total length 
+        for snake_id in 0..GameDefinition::MAX_SNAKE_COUNT {
+            if let Some(snake) = self.snakes[snake_id] {
+                let is_mine = game_definition.my_snake_ids.contains(&(snake_id as u8));
+
+                let (head_x, head_y) = snake.get_head();
+                let is_head_in_grid = snake::Snake::is_in_grid(head_x, head_y, game_definition.grid_width, game_definition.grid_height);
+
+                if is_mine {
+                    my_snakes_len += snake.len() as f32;
+                    if is_head_in_grid {
+                        my_frontier.turn_on(bitboard::Bitboard::coord_to_index(head_x as u16, head_y as u16, game_definition.grid_width));
+                        my_territory_size += 1f32;
+                        enemy_obstacles.or_inplace(snake.get_body_bitboard());
+                    }
+                }
+                else {
+                    enemy_snakes_len += snake.len() as f32;
+                    if is_head_in_grid {
+                        enemy_frontier.turn_on(bitboard::Bitboard::coord_to_index(head_x as u16, head_y as u16, game_definition.grid_width));
+                        enemy_territory_size += 1f32;
+                        my_obstacles.or_inplace(snake.get_body_bitboard());
+                    }
+                }
+            }
+        }
+
+        // now do the voronoi to compute the territory size
+        let mut cells_claimed = true;
+        while cells_claimed {
+            cells_claimed = false;
+
+            my_obstacles.or_inplace(&my_frontier);
+            enemy_obstacles.or_inplace(&enemy_frontier);
+
+            // first extend the enemy frontier and mine
+            my_frontier.expand_in_place(game_definition.grid_width, bitboard_masks);
+            my_frontier.and_not_inplace(&my_obstacles);
+            enemy_frontier.expand_in_place(game_definition.grid_width, bitboard_masks);
+            enemy_frontier.and_not_inplace(&enemy_obstacles);
+
+            if my_frontier.is_not_empty() {
+                cells_claimed = true;
+                enemy_obstacles.or_inplace(&my_frontier);
+
+                my_territory_size += my_frontier.count_ones() as f32;
+                my_power_source_count += my_frontier.count_collide(&self.power_source_bitboard) as f32;
+            }
+            if enemy_frontier.is_not_empty() {
+                cells_claimed = true;
+                my_obstacles.or_inplace(&enemy_frontier);
+
+                enemy_territory_size += enemy_frontier.count_ones() as f32;
+                enemy_power_source_count += enemy_frontier.count_collide(&self.power_source_bitboard) as f32;
+            }
+        }
+        
+        let power_source_count: f32 = self.power_source_bitboard.count_ones() as f32;
+        let total_grid_area: f32 = (game_definition.grid_width * game_definition.grid_height) as f32;
+        let max_posible_len: f32 = my_snakes_len + enemy_snakes_len + power_source_count;
+
+        let my_score = {
+            0.3 * my_territory_size / total_grid_area
+            + 0.3 * my_snakes_len / max_posible_len
+            + 0.4 * my_power_source_count / power_source_count
+        };
+        let enemy_score = {
+            0.3 * enemy_territory_size / total_grid_area
+            + 0.3 * enemy_snakes_len / max_posible_len
+            + 0.4 * enemy_power_source_count / power_source_count
+        };
+
+        let mut scores = [0f32; GameDefinition::MAX_SNAKE_COUNT];
+
+        for snake_id in 0..GameDefinition::MAX_SNAKE_COUNT {
+            if let Some(snake) = self.snakes[snake_id] {
+                let is_mine = game_definition.my_snake_ids.contains(&(snake_id as u8));
+
+                scores[snake_id] = if is_mine {my_score} else {enemy_score};
+            }
+        }
+
+        scores
+    }
+
+    pub fn get_snake(&self, snake_id: usize) -> &Option<snake::Snake> {
+        &self.snakes[snake_id]
+    }
+
+    pub fn get_zobrist_hash(&self) -> u64 {
+        self.zobrist_hash
+    }
 
     pub fn new() -> Self {
         GameState {
             power_source_bitboard: bitboard::Bitboard::new(),
             power_source_zobrist_hash: 0,
-            snakes: [None; Self::MAX_SNAKE_COUNT],
+            snakes: [None; GameDefinition::MAX_SNAKE_COUNT],
             zobrist_hash: 0,
         }
     }
@@ -354,7 +466,7 @@ impl GameState {
             self.zobrist_hash ^= snake.get_zobrist_hash();
         }
 
-        for snake_id in 0..Self::MAX_SNAKE_COUNT {
+        for snake_id in 0..GameDefinition::MAX_SNAKE_COUNT {
             if !snake_ids.contains(&(snake_id as u8)) {
                 self.snakes[snake_id] = None;
             }
@@ -394,6 +506,11 @@ mod test {
         let reader = std::io::BufReader::new(cursor);
 
         let game_definition = GameDefinition::from_buffer(reader);
+
+        let bitboard_masks = bitboard::BitboardMasks::new(
+            game_definition.grid_width,
+            game_definition.grid_height
+        );
 
         let mut game_state = GameState::new();
 
@@ -437,7 +554,7 @@ mod test {
 
         let mut expected_game_state = game_state.clone();
 
-        let mut actions: [Option<action::Direction>; GameState::MAX_SNAKE_COUNT] = [None; GameState::MAX_SNAKE_COUNT];
+        let mut actions: [Option<action::Direction>; GameDefinition::MAX_SNAKE_COUNT] = [None; GameDefinition::MAX_SNAKE_COUNT];
         actions[1] = Some(action::Direction::Right);
         actions[2] = Some(action::Direction::Right);
         actions[3] = Some(action::Direction::Left);
@@ -668,11 +785,6 @@ mod test {
             game_definition.grid_height,
             &zobrist_table,
         );
-
-        for snake_id in 0..16 {
-            println!("{snake_id}");
-            assert_eq!(game_state.snakes[snake_id], expected_game_state.snakes[snake_id])
-        }
 
         assert_eq!(game_state, expected_game_state);
 
@@ -1036,7 +1148,81 @@ mod test {
 
         let expected_power_source_bitboard = bitboard::Bitboard::new();
         assert_eq!(game_state.power_source_bitboard, expected_power_source_bitboard);
-        assert_eq!(game_state.snakes, [None; GameState::MAX_SNAKE_COUNT]);
+        assert_eq!(game_state.snakes, [None; GameDefinition::MAX_SNAKE_COUNT]);
+    }
+
+    #[test] fn can_evaluate() {
+        let zobrist_table = zobrist::ZobristTable::new();
+
+        let input = r#"0
+            18
+            10
+            ..................
+            ..................
+            ..................
+            ..#............#..
+            ...#....##....#...
+            ..................
+            ..................
+            .......#..#.......
+            ..#...##..##...#..
+            ##################
+            2
+            0
+            1
+            2
+            3
+        "#;
+
+        let cursor = std::io::Cursor::new(input.as_bytes());
+        let reader = std::io::BufReader::new(cursor);
+
+        let game_definition = GameDefinition::from_buffer(reader);
+
+        let bitboard_masks = bitboard::BitboardMasks::new(
+            game_definition.grid_width,
+            game_definition.grid_height
+        );
+
+        let mut game_state = GameState::new();
+
+        let input = r#"18
+            0 2
+            17 2
+            4 2
+            13 2
+            7 4
+            10 4
+            6 5
+            11 5
+            0 1
+            17 1
+            5 4
+            12 4
+            0 5
+            17 5
+            5 6
+            12 6
+            0 7
+            17 7
+            4
+            0 2,5:2,6:2,7
+            1 15,0:15,1:15,2
+            2 15,5:15,6:15,7
+            3 2,0:2,1:2,2
+        "#;
+
+        let cursor = std::io::Cursor::new(input.as_bytes());
+        let reader = std::io::BufReader::new(cursor);
+
+        game_state.update_from_buffer(
+            reader,
+            game_definition.grid_width,
+            game_definition.grid_height,
+            &zobrist_table
+        );
+
+        let evaluation = game_state.evaluate(&game_definition, &bitboard_masks);
     }
 
     #[test]
@@ -1074,7 +1260,7 @@ mod test {
         expected_power_source_bitboard.turn_on(bitboard::Bitboard::coord_to_index(8, 10, width));
         assert_eq!(game_state.power_source_bitboard, expected_power_source_bitboard);
 
-        let mut expected_snakes = [None; GameState::MAX_SNAKE_COUNT];
+        let mut expected_snakes = [None; GameDefinition::MAX_SNAKE_COUNT];
         let mut snake = snake::Snake::new();
         snake.add_body_part(0, 0, width, height, &zobrist_table, 4);
         snake.add_body_part(1, 0, width, height, &zobrist_table, 4);

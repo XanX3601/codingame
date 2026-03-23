@@ -61,6 +61,10 @@ impl Snake {
         &self.body_bitboard
     }
 
+    pub fn get_direction(&self) -> action::Direction {
+        self.direction
+    }
+
     pub fn get_head(&self) -> (i16, i16) {
         self.body[self.head_index as usize]
     }
