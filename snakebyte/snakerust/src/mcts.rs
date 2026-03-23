@@ -1,5 +1,6 @@
 use crate::action;
 use crate::bitboard;
+use crate::snake;
 use crate::state;
 use crate::zobrist;
 
@@ -77,7 +78,7 @@ impl Mcts {
 
                 // otherwise, find the best action for each snake and go on to
                 // next state
-                let actions = self.select_actions_decoupled(node, &state);
+                let actions = self.select_actions_decoupled(node, &state, &game_definition);
                 path_hashes[turn_count] = state.get_zobrist_hash();
                 path_actions[turn_count] = actions;
 
@@ -120,7 +121,7 @@ impl Mcts {
         self.get_best_action(root_state)
     }
 
-    pub fn select_actions_decoupled(&self, node: &Node, state: &state::GameState) -> [Option<action::Direction>; 16] {
+    fn select_actions_decoupled(&self, node: &Node, state: &state::GameState, game_definition: &state::GameDefinition) -> [Option<action::Direction>; state::GameDefinition::MAX_SNAKE_COUNT] {
         let mut actions = [None; state::GameDefinition::MAX_SNAKE_COUNT];
         let ln_visit_count = (node.visit_count as f32).ln();
 
@@ -130,7 +131,30 @@ impl Mcts {
                 let mut max_ucb = f32::MIN;
 
                 for direction in action::Direction::DIRECTIONS {
+                    // is the snake tries to go backward, ignore the direction
                     if direction == snake.get_direction().get_backward() {continue;}
+
+                    // if the direction leads to a platform crash, ignore the 
+                    // direction
+                    let (head_x, head_y) = snake.get_head();
+                    let (next_head_x, next_head_y) = direction.apply(head_x, head_y);
+                    let is_next_head_in_grid = snake::Snake::is_in_grid(
+                        next_head_x, 
+                        next_head_y, 
+                        game_definition.get_grid_width(),
+                        game_definition.get_grid_height()
+                    );
+                    let is_next_head_a_platform = is_next_head_in_grid && game_definition
+                        .get_platform_bitboard()
+                        .is_on(
+                            bitboard::Bitboard::coord_to_index(
+                                next_head_x as u16,
+                                next_head_y as u16,
+                                game_definition.get_grid_width()
+                            )
+                        );
+
+                    if is_next_head_a_platform {continue;}
 
                     let (direction_sum_score, direction_visit_count) = node.stats[snake_id][direction as usize];
                     let ucb = if direction_visit_count == 0 {
@@ -210,7 +234,7 @@ mod test {
     fn can_use_node() {
         let mut node = Node{
             game_state_zobrist_hash: 0,
-            stats: [[(0f32, 0); 4]; 16],
+            stats: [[(0f32, 0); 4]; state::GameDefinition::MAX_SNAKE_COUNT],
             visit_count: 0,
         };
 

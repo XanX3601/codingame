@@ -14,7 +14,7 @@ pub struct GameDefinition {
 }
 
 impl GameDefinition {
-    pub const MAX_SNAKE_COUNT: usize = 16;
+    pub const MAX_SNAKE_COUNT: usize = 8;
 
     pub fn from_buffer<R: std::io::BufRead>(mut reader: R) -> GameDefinition {
         let mut input_line = String::new();
@@ -109,6 +109,10 @@ impl GameDefinition {
 
     pub fn get_my_snake_ids(&self) -> &std::collections::HashSet<u8> {
         &self.my_snake_ids
+    }
+
+    pub fn get_platform_bitboard(&self) -> bitboard::Bitboard {
+        self.platform_bitboard
     }
 
     pub fn get_snake_count_per_player(&self) -> usize {
@@ -277,7 +281,7 @@ pub struct GameState {
 }
 
 impl GameState {
-    pub fn evaluate(&self, game_definition: &GameDefinition, bitboard_masks: &bitboard::BitboardMasks) -> [f32; GameDefinition::MAX_SNAKE_COUNT] {
+    pub fn evaluate_old(&self, game_definition: &GameDefinition, bitboard_masks: &bitboard::BitboardMasks) -> [f32; GameDefinition::MAX_SNAKE_COUNT] {
         // goal is to compute two score: one for me and one for opponent
 
         let mut my_frontier = bitboard::Bitboard::new();
@@ -373,6 +377,14 @@ impl GameState {
                 scores[snake_id] = if is_mine {my_score} else {enemy_score};
             }
         }
+
+        scores
+    }
+
+    pub fn evaluate(&self, game_definition: &GameDefinition, bitboard_masks: &bitboard::BitboardMasks) -> [f32; GameDefinition::MAX_SNAKE_COUNT] {
+
+
+        let mut scores = [0f32; GameDefinition::MAX_SNAKE_COUNT];
 
         scores
     }
@@ -593,10 +605,6 @@ mod test {
             game_definition.grid_height,
             &zobrist_table
         );
-
-        for snake_id in 0..16 {
-            assert_eq!(game_state.snakes[snake_id], expected_game_state.snakes[snake_id])
-        }
 
         assert_eq!(game_state, expected_game_state);
 

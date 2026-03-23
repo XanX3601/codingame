@@ -31,5 +31,6 @@ fn main() {
                 print!("{my_snake_id} {}", direction.to_string());
             }
         }
+        println!("");
     }
 }
