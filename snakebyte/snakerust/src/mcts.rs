@@ -100,7 +100,7 @@ impl Mcts {
             node.visit_count += 1;
 
             // evaluate
-            let scores = state.evaluate(game_definition, bitboard_masks);
+            let scores = state.evaluate(root_state, game_definition, bitboard_masks);
 
             // backpropagation
             for turn_index in 0..turn_count {
@@ -208,7 +208,11 @@ impl Mcts {
                         // compute distance to closest power source
                         let mut min_distance_to_pwoer_source = 0f32;
                         let mut reach_power_source = false;
-                        while !reach_power_source {
+                        let max_distance_to_power_source = {
+                            game_definition.get_grid_width() 
+                            + game_definition.get_grid_height()
+                        };
+                        while !reach_power_source && min_distance_to_pwoer_source < max_distance_to_power_source as f32 {
                             // must start by checking that next head is not on
                             // a power source
                             reach_power_source = power_source_path_bitboard.does_collide(

@@ -292,85 +292,60 @@ pub struct GameState {
 }
 
 impl GameState {
-    pub fn evaluate(&mut self, root_state: &Self, game_definition: &GameDefinition, bitboard_masks: &bitboard::BitboardMasks) -> [f32; GameDefinition::MAX_SNAKE_COUNT] {
-        // start by computing a collision bitboard and start the territory
-        let mut collision_bitboard = game_definition.get_platform_bitboard().clone();
-        let mut territories = [bitboard::Bitboard::new(); GameDefinition::MAX_SNAKE_COUNT];
+    pub fn evaluate(&self, root_state: &Self, game_definition: &GameDefinition, bitboard_masks: &bitboard::BitboardMasks) -> [f32; GameDefinition::MAX_SNAKE_COUNT] {
+        let mut scores = [0f32 ; GameDefinition::MAX_SNAKE_COUNT];
+
+        let mut my_root_len = 0;
+        let mut my_futur_len = 0;
+        let mut enemy_root_len = 0;
+        let mut enemy_futur_len = 0;
+        
         for snake_id in 0..GameDefinition::MAX_SNAKE_COUNT {
-            if let Some(snake) = self.get_snake_mut(snake_id) {
-                snake.with_headless_body_bitboard(
-                    game_definition.get_grid_width(),
-                    game_definition.get_grid_height(),
-                    |body_bitboard| {
-                        collision_bitboard.or_inplace(body_bitboard)
-                    }
-                );
+            let is_mine = game_definition.get_my_snake_ids().contains(&(snake_id as u8));
 
-                let (head_x, head_y) = snake.get_head();
+            if let Some(root_snake) = root_state.get_snake(snake_id) {
+                let root_len = root_snake.len();
+                if is_mine {my_root_len += root_len as i32} else {enemy_root_len += root_len as i32};
 
-                // cannot compute territory with head outside grid
-                if !snake::Snake::is_in_grid(
-                    head_x,
-                    head_y,
-                    game_definition.get_grid_width(),
-                    game_definition.get_grid_height()
-                ) {
-                    continue;
-                }
-
-                territories[snake_id].turn_on(
-                    bitboard::Bitboard::coord_to_index(
-                        head_x as u16,
-                        head_y as u16,
-                        game_definition.get_grid_width()
-                    )
-                )
-            }
-        }
-
-        let mut cells_claimed = true;
-        while cells_claimed {
-            cells_claimed = false;
-
-            for snake_id in 0..GameDefinition::MAX_SNAKE_COUNT {
-                if self.get_snake(snake_id).is_none() {continue;}
-
-                let territory_size = territories[snake_id].count_ones();
-                territories[snake_id].expand_in_place(game_definition.get_grid_width(), bitboard_masks);
-                territories[snake_id].and_not_inplace(&collision_bitboard);
-
-                if territories[snake_id].count_ones() > territory_size {
-                    cells_claimed = true;
-                    // snake territory becomes collision for other snakes
-                    collision_bitboard.or_inplace(&territories[snake_id]);
+                if let Some(futur_snake) = self.get_snake(snake_id) {
+                    let futor_len = futur_snake.len();
+                    if is_mine {my_futur_len += futor_len as i32} else {enemy_futur_len += futor_len as i32};
                 }
             }
         }
 
-        let power_source_count: f32 = self.power_source_bitboard.count_ones() as f32;
+        let my_growth = my_futur_len - my_root_len ;
+        let enemy_growth = enemy_futur_len - enemy_root_len ;
 
-        let mut scores = [0f32; GameDefinition::MAX_SNAKE_COUNT];
+        let max_growth = root_state.power_source_bitboard.count_ones() as i32;
+
+        let my_growth_ratio = (my_root_len + my_root_len) as f32 / (max_growth + my_root_len) as f32;
+        let enemy_growth_ratio = (enemy_root_len + enemy_root_len) as f32 / (max_growth + enemy_root_len) as f32;
+
         for snake_id in 0..GameDefinition::MAX_SNAKE_COUNT {
             // only consider my snakes
             if !game_definition.get_my_snake_ids().contains(&(snake_id as u8)) {
                 continue;
             }
 
-            if let Some(snake) = self.get_snake(snake_id) {
-                let len: f32 = snake.len() as f32;
-                let len_max: f32 = snake.len() as f32 + power_source_count;
+            if let Some(root_snake) = root_state.get_snake(snake_id) {
+                let root_len: f32 = root_snake.len() as f32;
 
-                let territory_size: f32 = territories[snake_id].count_ones() as f32;
-                let territory_max_size: f32 = game_definition.get_grid_width() as f32 * game_definition.get_grid_height() as f32;
+                if let Some(futur_snake) = self.get_snake(snake_id) {
+                    let futur_len: f32 = futur_snake.len() as f32;
 
-                let power_source_controlled_count: f32 = self.power_source_bitboard.and(&territories[snake_id]).count_ones() as f32;
+                    let growth_ratio = (root_len + root_len) as f32 / (max_growth as f32 + root_len) as f32;
 
-                scores[snake_id] = {
-                    0.3 // being alive give you a base score
-                    + 0.2 * len / len_max // the longer you are, the better
-                    + 0.2 * territory_size / territory_max_size // the bigger your territory, the better
-                    + 0.3 * power_source_controlled_count / power_source_count // the more power source you control the better
-                };
+                    scores[snake_id] = {
+                        0.5
+                        + 0.3 * my_growth_ratio
+                        - 0.3 * enemy_growth_ratio
+                        + 0.2 * growth_ratio
+                    }
+                }
+                else {
+                    scores[snake_id] = 0f32;
+                }
             }
         }
 
@@ -1227,7 +1202,7 @@ mod test {
             &zobrist_table
         );
 
-        let evaluation = game_state.evaluate(&game_definition, &bitboard_masks);
+        let evaluation = game_state.evaluate(&game_state, &game_definition, &bitboard_masks);
     }
 
     #[test]
