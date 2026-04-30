@@ -1,0 +1,20 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "codingame-cli"
+version = "0.1.0"
+description = "CLI tool for codingame challenges"
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+    "pyperclip",
+    "rich_click",
+]
+
+[project.scripts]
+codingame = "codingame.__main__:main"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/codingame"]

@@ -5,6 +5,7 @@ import rich.logging
 import rich.traceback
 import rich_click as click
 import string
+import subprocess
 
 
 @click.group()
@@ -138,8 +139,22 @@ def python_copy(file):
     pyperclip.copy(output)
     logging.info("file copied")
 
+@cli.command()
+def rust():
+    subprocess.run(["cargo", "merge"])
+    logging.info("project merged")
 
-if __name__ == "__main__":
+    file_path = pathlib.Path("./target/merge/merged.rs")
+
+    with file_path.open("r") as file:
+        lines = [line for line in file]
+
+    output = ''.join(lines)
+
+    pyperclip.copy(output)
+    logging.info("project copied")
+
+def main():
     rich.traceback.install()
 
     logging_format = "%(message)s"
@@ -151,3 +166,7 @@ if __name__ == "__main__":
     )
 
     cli()
+
+
+if __name__ == "__main__":
+    main()
